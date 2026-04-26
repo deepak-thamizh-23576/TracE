@@ -36,3 +36,10 @@ npm-debug.log*
 
 # llms-full.txt (large reference file)
 llms-full.txt
+
+# Private / non-app files
+tweet/
+ws-relay/
+.catalystrc
+.build/
+TracE-*.apk
