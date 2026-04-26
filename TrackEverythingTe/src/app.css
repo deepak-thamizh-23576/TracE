@@ -1,0 +1,792 @@
+/* ═══════════ FONTS ═══════════ */
+
+@font-face {
+  font-family: "ZohoPuvi";
+  src: url("./assets/fonts/Zoho-Puvi-Light.otf") format("opentype");
+  font-weight: 300;
+}
+
+@font-face {
+  font-family: "ZohoPuvi";
+  src: url("./assets/fonts/Zoho-Puvi-Regular.otf") format("opentype");
+  font-weight: 400;
+}
+
+@font-face {
+  font-family: "ZohoPuvi";
+  src: url("./assets/fonts/Zoho-Puvi-Medium.otf") format("opentype");
+  font-weight: 500;
+}
+
+@font-face {
+  font-family: "ZohoPuvi";
+  src: url("./assets/fonts/Zoho-Puvi-Semibold.otf") format("opentype");
+  font-weight: 600;
+}
+
+/* ═══════════ DESIGN TOKENS (matching mobile AppColors) ═══════════ */
+
+:root {
+  --primary: rgba(255, 217, 0, 0.58);
+  --primary-solid: #FFD900;
+  --bg-main: #FFFFFF;
+  --text-primary: #111827;
+  --text-secondary: #4B5563;
+  --priority-high: #EF4444;
+  --priority-medium: #F97316;
+  --priority-low: #22C55E;
+  --gray-50: #F9FAFB;
+  --gray-100: #F3F4F6;
+  --gray-200: #E5E7EB;
+  --gray-300: #D1D5DB;
+  --gray-400: #9CA3AF;
+  --white: #FFFFFF;
+  --red-50: #FEF2F2;
+  --red-100: #FEE2E2;
+  --red-500: #EF4444;
+  --red-600: #DC2626;
+  --green-500: #22C55E;
+}
+
+/* ═══════════ RESET & BASE ═══════════ */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "ZohoPuvi", system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg-main);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ═══════════ LAYOUT ═══════════ */
+
+.app {
+  display: flex;
+  height: 100vh;
+  background: var(--bg-main);
+}
+
+/* LEFT SIDE — scrollable columns */
+.left-section {
+  flex: 1;
+  display: flex;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.left-section::-webkit-scrollbar {
+  height: 0;
+}
+
+/* Each column */
+.column {
+  min-width: 280px;
+  max-width: 340px;
+  flex: 1;
+  background: var(--white);
+  padding: 10px;
+  border-right: 1px solid var(--gray-100);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* Column title */
+.column > h3 {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.5px;
+  margin: 0;
+}
+
+h3 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.5px;
+}
+
+/* ═══════════ SECTIONS ═══════════ */
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 4px;
+}
+
+.section-header h4 {
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+h4 {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.collapse-btn {
+  background: transparent;
+  border: none;
+  font-size: 18px;
+  color: var(--gray-400);
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+  transition: color 0.15s;
+}
+
+.collapse-btn:hover {
+  color: var(--text-secondary);
+}
+
+/* ═══════════ TASK CARD (collapsed) ═══════════ */
+
+.card-wrapper {
+  display: flex;
+  flex-direction: column;
+}
+
+.task-card {
+  display: flex;
+  align-items: center;
+  padding: 14px;
+  background: var(--white);
+  border-radius: 8px;
+  border: 1px solid var(--gray-100);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+}
+
+.task-card:hover {
+  border-color: var(--gray-200);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.task-content {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.task-content h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+.task-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 12px;
+  flex-shrink: 0;
+}
+
+/* Priority dot */
+.priority {
+  width: 10px;
+  height: 10px;
+  border-radius: 9999px;
+  flex-shrink: 0;
+}
+
+.priority.High {
+  background: var(--priority-high);
+}
+
+.priority.Medium {
+  background: var(--priority-medium);
+}
+
+.priority.Low {
+  background: var(--priority-low);
+}
+
+/* Delay badge on collapsed card */
+.delay-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  background: var(--gray-100);
+  border-radius: 8px;
+  padding: 3px 8px;
+  flex-shrink: 0;
+}
+
+/* ═══════════ EXPANDED PANEL ═══════════ */
+
+/* When expanded panel follows the task card, connect them visually */
+.task-card + .expanded-panel {
+  margin-top: 0;
+}
+
+/* Style the task card when it has an expanded panel sibling */
+.card-wrapper .task-card:has(+ .expanded-panel),
+.task-card.expanded {
+  border: 2px solid var(--primary-solid);
+  border-bottom: none;
+  border-radius: 5px 5px 0 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.expanded-panel {
+  background: rgba(249, 250, 251, 0.5);
+  border: 2px solid var(--primary-solid);
+  border-top: 1px solid var(--gray-100);
+  border-radius: 0 0 5px 5px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+/* ═══════════ DELAY THREAD ═══════════ */
+
+.delay-thread {
+  display: flex;
+  flex-direction: column;
+}
+
+.thread-title {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 12px;
+  padding: 0 4px;
+}
+
+.thread-entry {
+  display: flex;
+  min-height: 48px;
+}
+
+.thread-line-col {
+  width: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.thread-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--primary-solid);
+  margin-top: 4px;
+  flex-shrink: 0;
+}
+
+.thread-line {
+  width: 2px;
+  flex: 1;
+  background: var(--gray-200);
+  margin-top: 4px;
+}
+
+.thread-content {
+  flex: 1;
+  margin-left: 10px;
+  padding-bottom: 16px;
+}
+
+.thread-date {
+  font-size: 10px;
+  color: var(--gray-400);
+  margin-bottom: 6px;
+}
+
+/* Delay card (view mode) */
+.delay-card {
+  display: flex;
+  align-items: center;
+  background: var(--white);
+  border: 1px solid var(--gray-200);
+  border-radius: 8px;
+  padding: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.delay-card:hover {
+  border-color: var(--primary-solid);
+}
+
+.delay-card-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.delay-reason {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+.attachment-thumb {
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--gray-200);
+  background: var(--gray-100);
+  flex-shrink: 0;
+}
+
+.attachment-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.8;
+}
+
+.delay-delete-btn {
+  background: var(--red-50);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  padding: 6px;
+  font-size: 12px;
+  transition: background 0.15s;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.delay-delete-btn:hover {
+  background: var(--red-100);
+}
+
+/* Delay card (edit mode) */
+.delay-card-editing {
+  background: var(--white);
+  border: 2px solid var(--primary-solid);
+  border-radius: 8px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.delay-edit-input {
+  width: 100%;
+  border: none;
+  outline: none;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  padding: 4px;
+  background: transparent;
+  box-sizing: border-box;
+}
+
+.edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.edit-save-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: none;
+  background: var(--green-500);
+  color: var(--white);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.edit-save-btn:hover {
+  background: #16a34a;
+}
+
+.edit-cancel-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: none;
+  background: var(--gray-100);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.edit-cancel-btn:hover {
+  background: var(--gray-200);
+}
+
+/* ═══════════ NEW DELAY INPUT ═══════════ */
+
+.delay-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.delay-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 4px;
+}
+
+.delay-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+}
+
+.delay-label-date {
+  font-size: 10px;
+  color: var(--gray-400);
+}
+
+.delay-input-container {
+  display: flex;
+  align-items: center;
+  background: var(--white);
+  border: 1px solid var(--gray-200);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.delay-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  padding: 10px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: transparent;
+}
+
+.delay-input::placeholder {
+  color: var(--gray-400);
+}
+
+/* ═══════════ ACTION ROW ═══════════ */
+
+.action-row {
+  display: flex;
+  gap: 5px;
+  padding-top: 8px;
+}
+
+.action-btn-delay {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 8px;
+  border: none;
+  background: var(--primary-solid);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: default;
+  transition: all 0.15s;
+}
+
+.action-btn-delay.save-mode {
+  background: var(--green-500);
+  color: var(--white);
+  cursor: pointer;
+}
+
+.action-btn-delay.save-mode:hover {
+  background: #16a34a;
+}
+
+.action-btn-complete {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid #bbf7d0;
+  background: #f0fdf4;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: #16a34a;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.action-btn-complete:hover {
+  background: #dcfce7;
+}
+
+.action-btn-edit {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid var(--gray-200);
+  background: var(--gray-50);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.action-btn-edit:hover {
+  background: var(--gray-100);
+}
+
+/* Goal action card */
+.action-card {
+  background: rgba(249, 250, 251, 0.5);
+  border: 2px solid var(--primary-solid);
+  border-top: 1px solid var(--gray-100);
+  border-radius: 0 0 12px 12px;
+  padding: 12px;
+  margin-top: -2px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.action-btn {
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--gray-200);
+  background: var(--white);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  transition: all 0.15s;
+}
+
+.action-btn:hover {
+  background: var(--gray-100);
+}
+
+/* ═══════════ RIGHT SIDE — CALENDAR ═══════════ */
+
+.right-section {
+  width: 320px;
+  background: var(--white);
+  padding: 10px;
+  border-left: 1px solid var(--gray-100);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  flex-shrink: 0;
+}
+
+.right-section > h3 {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.3px;
+}
+
+.calendar-container {
+  font-family: inherit;
+}
+
+/* Flatpickr overrides to match mobile calendar */
+.calendar-container .flatpickr-calendar {
+  box-shadow: none;
+  border: 1px solid var(--gray-200);
+  border-radius: 12px;
+  width: 100%;
+  font-family: inherit;
+}
+
+.calendar-container .flatpickr-day.selected {
+  background: var(--primary-solid);
+  border-color: var(--primary-solid);
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.calendar-container .flatpickr-day.today:not(.selected) {
+  background: var(--gray-100);
+  border-color: var(--gray-100);
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.calendar-container .flatpickr-day:hover {
+  background: rgba(255, 217, 0, 0.2);
+  border-color: transparent;
+}
+
+/* Pending task dot indicator on calendar */
+.calendar-container .flatpickr-day.has-pending {
+  position: relative;
+}
+
+.calendar-container .flatpickr-day.has-pending::after {
+  content: '';
+  position: absolute;
+  bottom: 3px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 5px;
+  height: 5px;
+  background: var(--priority-high);
+  border-radius: 50%;
+}
+
+.calendar-container .flatpickr-day.selected.has-pending::after {
+  background: var(--text-primary);
+}
+
+/* ═══════════ BOTTOM NAV / INPUT BAR ═══════════ */
+
+.bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 24px 20px;
+
+  background: rgba(255, 255, 255, 0.95);
+  border-top: 1px solid var(--gray-100);
+  backdrop-filter: blur(8px);
+}
+
+.bottom-nav button {
+  padding: 10px 20px;
+  border-radius: 12px;
+  border: 1px solid var(--gray-200);
+  background: var(--white);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  transition: all 0.15s;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+}
+
+.bottom-nav button:hover {
+  background: var(--gray-50);
+  border-color: var(--gray-300);
+}
+
+.bottom-nav button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.bottom-nav input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-primary);
+  padding: 10px 0;
+}
+
+.bottom-nav input::placeholder {
+  color: var(--gray-400);
+}
+
+/* ═══════════ EDIT INPUT ═══════════ */
+
+.edit-input {
+  width: 100%;
+  padding: 10px;
+  font-size: 12px;
+  border: 1px solid var(--gray-200);
+  border-radius: 8px;
+  font-family: inherit;
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.edit-input:focus {
+  border-color: var(--primary-solid);
+}
+
+/* ═══════════ SCROLLBAR STYLING ═══════════ */
+
+.column::-webkit-scrollbar {
+  width: 4px;
+}
+
+.column::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.column::-webkit-scrollbar-thumb {
+  background: var(--gray-200);
+  border-radius: 4px;
+}
+
+.column::-webkit-scrollbar-thumb:hover {
+  background: var(--gray-300);
+}

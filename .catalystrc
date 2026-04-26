@@ -1,0 +1,30 @@
+{
+  "defaults": {
+    "project": 1,
+    "env": 1
+  },
+  "actives": {
+    "project": 1,
+    "env": 1
+  },
+  "projects": [
+    {
+      "idx": 1,
+      "id": "31594000000112008",
+      "name": "TrackEverythingTe",
+      "domain": {
+        "id": "10118632993",
+        "name": "trackeverythingte-904503171.development"
+      },
+      "timezone": "Asia/Kolkata",
+      "env": [
+        {
+          "idx": 1,
+          "id": "904503171",
+          "name": "Development",
+          "type": 3
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+mobile/dist/
+mobile/.expo/
+TrackEverythingTe/dist/
+
+# Environment & secrets
+.env
+.env.*
+*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Catalyst
+.catalyst/
+
+# Expo
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+npm-debug.log*
+
+# llms-full.txt (large reference file)
+llms-full.txt
