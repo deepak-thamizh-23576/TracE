@@ -570,4 +570,224 @@ app.get("/proxyAttachment", authMiddleware, async (req, res) => {
   }
 });
 
+// ──────────────────────────────────────────────────────────────────
+//  SCORE ROUTES
+//  Rolling 7-day activity score (0–100) for user engagement tracking.
+// ──────────────────────────────────────────────────────────────────
+
+/** Format a Date as "YYYY-MM-DD" in local time */
+function toDateKey(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+/**
+ * POST /score/calculate
+ * Computes and persists the rolling 7-day activity score for the authenticated user.
+ * Returns { score, tier, breakdown }.
+ */
+app.post("/score/calculate", authMiddleware, async (req, res) => {
+  try {
+    const catalystApp = catalyst.initialize(req);
+    const zcql = catalystApp.zcql();
+    const uid = String(req.userId);
+
+    // ── Date window ──
+    const now = new Date();
+    const todayKey = toDateKey(now);
+
+    const windowStartDate = new Date(now);
+    windowStartDate.setDate(windowStartDate.getDate() - 6);
+    const windowStartKey = toDateKey(windowStartDate);
+
+    const threeDaysAgoDate = new Date(now);
+    threeDaysAgoDate.setDate(threeDaysAgoDate.getDate() - 3);
+    const threeDaysAgoKey = toDateKey(threeDaysAgoDate);
+
+    // ── Fetch items in the 7-day window (paginated) ──
+    const PAGE_SIZE = 300;
+    let windowItems = [];
+    let offset = 0;
+    while (true) {
+      const batch = await zcql.executeZCQLQuery(
+        `SELECT ROWID, itemType, itemTypeLevel, status, taskDate FROM TeMain WHERE userId='${uid}' AND taskDate >= '${windowStartKey}' AND taskDate <= '${todayKey}' LIMIT ${offset},${PAGE_SIZE}`
+      );
+      const rows = batch.map(r => r.TeMain);
+      windowItems = windowItems.concat(rows);
+      if (rows.length < PAGE_SIZE) break;
+      offset += PAGE_SIZE;
+    }
+
+    // ── Fetch stale pending tasks (pending for >3 days) ──
+    let staleBatch = [];
+    try {
+      staleBatch = await zcql.executeZCQLQuery(
+        `SELECT ROWID FROM TeMain WHERE userId='${uid}' AND itemType='Task' AND taskDate < '${threeDaysAgoKey}' AND (status='pending' OR status IS NULL)`
+      );
+    } catch (_) { /* ignore — table may have no matching rows */ }
+    const staleTasks = staleBatch.length;
+
+    // ── Score computation ──
+    // Group window items by date for empty-day detection
+    const taskDateSet = new Set();
+    const foodDateSet = new Set();
+    // Per-date meal tracking for full-meal-day bonus
+    const mealsByDate = {}; // { "YYYY-MM-DD": Set<mealType> }
+
+    let tasksAdded = 0;
+    let tasksCompleted = 0;
+    let highPriorityCompleted = 0;
+    let goalsCompleted = 0;
+    let foodLogged = 0;
+    let fullMealDays = 0;
+    let remindersCompleted = 0;
+    let droppedTasks = 0;
+
+    const MEAL_TYPES = new Set(["Breakfast", "Lunch", "Dinner", "Snacks"]);
+
+    for (const item of windowItems) {
+      const type = item.itemType;
+      const status = item.status;
+      const level = item.itemTypeLevel || "";
+      const dateKey = (item.taskDate || "").substring(0, 10);
+
+      if (type === "Task") {
+        tasksAdded++;
+        taskDateSet.add(dateKey);
+        if (status === "completed") {
+          if (level.toLowerCase() === "high") {
+            highPriorityCompleted++;
+          } else {
+            tasksCompleted++;
+          }
+        }
+        if (status === "dropped") droppedTasks++;
+      } else if (type === "Food") {
+        foodLogged++;
+        foodDateSet.add(dateKey);
+        // Track which meals logged per date
+        if (MEAL_TYPES.has(level)) {
+          if (!mealsByDate[dateKey]) mealsByDate[dateKey] = new Set();
+          mealsByDate[dateKey].add(level);
+        }
+      } else if (type === "Goal") {
+        if (status === "completed") goalsCompleted++;
+      } else if (type === "Reminder") {
+        if (status === "completed") remindersCompleted++;
+      }
+    }
+
+    // Count full-meal days (all 4 meal types logged in a single day)
+    for (const meals of Object.values(mealsByDate)) {
+      if (meals.size === 4) fullMealDays++;
+    }
+
+    // Count empty-task days and empty-food days in the 7-day window
+    let emptyTaskDays = 0;
+    let emptyFoodDays = 0;
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(windowStartDate);
+      d.setDate(d.getDate() + i);
+      const dk = toDateKey(d);
+      if (!taskDateSet.has(dk)) emptyTaskDays++;
+      if (!foodDateSet.has(dk)) emptyFoodDays++;
+    }
+
+    // ── Tally ──
+    const totalPositive =
+      (tasksAdded * 2) +
+      (tasksCompleted * 5) +
+      (highPriorityCompleted * 7) +
+      (goalsCompleted * 10) +
+      (foodLogged * 2) +
+      (fullMealDays * 5) +
+      (remindersCompleted * 3);
+
+    const totalNegative =
+      (emptyTaskDays * -5) +
+      (emptyFoodDays * -3) +
+      (staleTasks * -2) +
+      (droppedTasks * -1);
+
+    const score = Math.max(0, Math.min(100, 50 + totalPositive + totalNegative));
+
+    // ── Tier ──
+    let tier;
+    if (score >= 80) tier = "On Fire";
+    else if (score >= 60) tier = "Good";
+    else if (score >= 40) tier = "Needs Work";
+    else tier = "Slipping";
+
+    const breakdown = {
+      tasksAdded,
+      tasksCompleted,
+      highPriorityCompleted,
+      goalsCompleted,
+      foodLogged,
+      fullMealDays,
+      remindersCompleted,
+      emptyTaskDays,
+      emptyFoodDays,
+      staleTasks,
+      droppedTasks,
+      totalPositive,
+      totalNegative,
+    };
+
+    // ── Upsert into TeScoreLog ──
+    try {
+      const table = catalystApp.datastore().table("TeScoreLog");
+      const existing = await zcql.executeZCQLQuery(
+        `SELECT ROWID FROM TeScoreLog WHERE userId='${uid}' AND scoreDate='${todayKey}'`
+      );
+      if (existing && existing.length > 0) {
+        const rowId = existing[0].TeScoreLog.ROWID;
+        await table.updateRow({
+          ROWID: rowId,
+          score: String(score),
+          breakdown: JSON.stringify(breakdown),
+        });
+      } else {
+        await table.insertRow({
+          userId: uid,
+          scoreDate: todayKey,
+          score: String(score),
+          breakdown: JSON.stringify(breakdown),
+        });
+      }
+    } catch (dbErr) {
+      // Don't fail the whole request if persistence fails — still return computed score
+      console.error("TeScoreLog upsert error:", dbErr.message);
+    }
+
+    res.json({ score, tier, breakdown });
+  } catch (err) {
+    console.error("score/calculate error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /score/history
+ * Returns the last 7 daily score records for the authenticated user.
+ */
+app.get("/score/history", authMiddleware, async (req, res) => {
+  try {
+    const catalystApp = catalyst.initialize(req);
+    const zcql = catalystApp.zcql();
+    const uid = String(req.userId);
+
+    const rows = await zcql.executeZCQLQuery(
+      `SELECT ROWID, userId, scoreDate, score, breakdown FROM TeScoreLog WHERE userId='${uid}' ORDER BY scoreDate DESC LIMIT 7`
+    );
+    const history = (rows || []).map(r => r.TeScoreLog);
+    res.json({ history });
+  } catch (err) {
+    console.error("score/history error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = app;

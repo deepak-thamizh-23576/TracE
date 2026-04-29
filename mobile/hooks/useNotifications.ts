@@ -10,7 +10,12 @@
  * try/catch so this hook is a no-op on OTA builds that predate the native module.
  */
 
-import { FoodItem, ReminderItem, Task } from "@/constants/tasks";
+import {
+  FoodItem,
+  ReminderItem,
+  Task,
+  parseReminderDateTime,
+} from "@/constants/tasks";
 import { useEffect, useRef } from "react";
 import { Platform } from "react-native";
 
@@ -265,9 +270,10 @@ async function scheduleCustomReminders(reminders: ReminderItem[]): Promise<void>
       if (reminder.completed) continue;
       if (!reminder.reminderDateTime) continue;
 
-      const triggerDate = new Date(
+      const triggerDate = parseReminderDateTime(
         reminder.snoozedUntil || reminder.reminderDateTime
       );
+      if (!triggerDate) continue;
       if (isNaN(triggerDate.getTime()) || triggerDate.getTime() <= now) continue;
 
       const recurrenceLabel =

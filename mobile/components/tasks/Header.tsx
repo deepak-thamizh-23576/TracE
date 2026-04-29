@@ -4,6 +4,7 @@ import { HugeiconsIcon } from "@hugeicons/react-native";
 import React from "react";
 import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import ScoreBadge from "./ScoreBadge";
 
 const TABS = ["Task", "Food", "Reminder", "Goal"] as const;
 export type TabName = (typeof TABS)[number];
@@ -15,6 +16,9 @@ interface HeaderProps {
   onSearchPress?: () => void;
   selectedDate: Date;
   onLogoPress?: () => void;
+  score?: number | null;
+  tier?: string | null;
+  scoreLoading?: boolean;
 }
 
 function isSameDay(a: Date, b: Date) {
@@ -32,7 +36,7 @@ const TAB_TITLES: Record<TabName, string> = {
   Goal: "Goals",
 };
 
-export default function Header({ activeTab, onTabChange, onCalendarPress, onSearchPress, selectedDate, onLogoPress }: HeaderProps) {
+export default function Header({ activeTab, onTabChange, onCalendarPress, onSearchPress, selectedDate, onLogoPress, score, tier, scoreLoading }: HeaderProps) {
   const today = new Date();
   const isToday = isSameDay(selectedDate, today);
   const insets = useSafeAreaInsets();
@@ -66,6 +70,7 @@ export default function Header({ activeTab, onTabChange, onCalendarPress, onSear
           </View>
         </View>
         <View style={styles.topRightButtons}>
+          <ScoreBadge score={score ?? null} tier={tier ?? null} loading={scoreLoading} />
           {showCalendar && (
             <TouchableOpacity style={styles.calendarButton} activeOpacity={0.7} onPress={onCalendarPress}>
               <HugeiconsIcon icon={CalendarMinus02Icon} size={18} color={AppColors.textPrimary} />

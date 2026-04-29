@@ -25,10 +25,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 const DEPLOYED_BASE =
   "https://trackeverythingte-904503171.catalystserverless.com/server/track_everything_te_function/";
 
+const LOCAL_PORT = process.env.EXPO_PUBLIC_LOCAL_PORT ?? "3000";
+
 function getLocalBase(): string {
   // On web, always use localhost — the backend binds only to localhost
   if (typeof window !== "undefined" && typeof document !== "undefined") {
-    return "http://localhost:3004/server/track_everything_te_function";
+    return `http://localhost:${LOCAL_PORT}/server/track_everything_te_function`;
   }
   const debuggerHost =
     Constants.expoConfig?.hostUri ??
@@ -38,10 +40,10 @@ function getLocalBase(): string {
 
   if (debuggerHost) {
     const host = debuggerHost.split(":")[0];
-    return `http://${host}:3004/server/track_everything_te_function`;
+    return `http://${host}:${LOCAL_PORT}/server/track_everything_te_function`;
   }
 
-  return "http://localhost:3004/server/track_everything_te_function";
+  return `http://localhost:${LOCAL_PORT}/server/track_everything_te_function`;
 }
 
 /**

@@ -43,9 +43,9 @@ export interface ReminderItem {
   id: string;
   title: string;
   recurrence: RecurrenceType;
-  reminderDateTime: string; // ISO string "YYYY-MM-DDTHH:mm"
+  reminderDateTime: string; // Local datetime string "YYYY-MM-DDTHH:mm"
   completed: boolean;
-  snoozedUntil?: string; // ISO string if snoozed
+  snoozedUntil?: string; // Absolute datetime string (typically ISO with timezone)
   date: string; // formatted created date
   dueDate: string; // YYYY-MM-DD for calendar
 }
@@ -163,6 +163,40 @@ export const MOCK_TASKS: Task[] = [
 /** Convert a Date to a "YYYY-MM-DD" key */
 export function dateToKey(date: Date): string {
   return toDateKey(date);
+}
+
+const LOCAL_DATE_TIME_REGEX =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/;
+
+/**
+ * Parses a reminder datetime string while preserving local wall-clock time.
+ * - "YYYY-MM-DDTHH:mm" is treated as local time.
+ * - Other formats (for example ISO with timezone) use native Date parsing.
+ */
+export function parseReminderDateTime(dateTime: string): Date | null {
+  if (!dateTime) return null;
+
+  const localMatch = dateTime.match(LOCAL_DATE_TIME_REGEX);
+  if (localMatch) {
+    const year = Number(localMatch[1]);
+    const month = Number(localMatch[2]) - 1;
+    const day = Number(localMatch[3]);
+    const hour = Number(localMatch[4]);
+    const minute = Number(localMatch[5]);
+    const localDate = new Date(year, month, day, hour, minute, 0, 0);
+    return isNaN(localDate.getTime()) ? null : localDate;
+  }
+
+  const parsed = new Date(dateTime);
+  return isNaN(parsed.getTime()) ? null : parsed;
+}
+
+/** Formats a Date as local "YYYY-MM-DDTHH:mm". */
+export function formatLocalReminderDateTime(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
+    date.getDate()
+  )}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 // ──────────── MOCK FOOD DATA ────────────

@@ -1,5 +1,9 @@
 import { AppColors } from "@/constants/colors";
-import { RecurrenceType, ReminderItem } from "@/constants/tasks";
+import {
+  RecurrenceType,
+  ReminderItem,
+  parseReminderDateTime,
+} from "@/constants/tasks";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import React from "react";
 import {
@@ -33,7 +37,8 @@ interface ReminderCardProps {
 
 function formatReminderTime(dateTimeStr: string): string {
   if (!dateTimeStr) return "";
-  const d = new Date(dateTimeStr);
+  const d = parseReminderDateTime(dateTimeStr);
+  if (!d) return dateTimeStr;
   if (isNaN(d.getTime())) return dateTimeStr;
   return d.toLocaleString("en-US", {
     month: "short",
@@ -46,7 +51,8 @@ function formatReminderTime(dateTimeStr: string): string {
 
 function isOverdue(dateTimeStr: string): boolean {
   if (!dateTimeStr) return false;
-  const d = new Date(dateTimeStr);
+  const d = parseReminderDateTime(dateTimeStr);
+  if (!d) return false;
   return !isNaN(d.getTime()) && d.getTime() < Date.now();
 }
 

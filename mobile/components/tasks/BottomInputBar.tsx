@@ -1,5 +1,9 @@
 import { AppColors } from "@/constants/colors";
-import { Priority, RecurrenceType } from "@/constants/tasks";
+import {
+  parseReminderDateTime,
+  Priority,
+  RecurrenceType,
+} from "@/constants/tasks";
 import { Entypo, Feather } from "@expo/vector-icons";
 import React, { useEffect, useRef, useState } from "react";
 import {
@@ -53,6 +57,8 @@ const RECURRENCE_LABELS: { value: RecurrenceType; label: string }[] = [
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const DAYS_OF_WEEK = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+const LOCAL_DATE_TIME_REGEX =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/;
 
 function getDaysInMonth(year: number, month: number) {
   return new Date(year, month + 1, 0).getDate();
@@ -84,7 +90,7 @@ export default function BottomInputBar({
   const [datePickerOpen, setDatePickerOpen] = useState(false);
 
   // Parse current reminderDateTime or default to 1 hour from now
-  const parsedDt = reminderDateTime ? new Date(reminderDateTime) : null;
+  const parsedDt = parseReminderDateTime(reminderDateTime);
   const now = new Date();
   const defaultDt = new Date(now.getTime() + 3600_000);
   const activeDt = parsedDt && !isNaN(parsedDt.getTime()) ? parsedDt : defaultDt;
@@ -124,8 +130,11 @@ export default function BottomInputBar({
   }, []);
 
   const confirmDatePicker = () => {
-    const d = new Date(pickerYear, pickerMonth, pickerDay, pickerHour, pickerMinute);
-    onReminderDateTimeChange?.(d.toISOString().substring(0, 16));
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const local = `${pickerYear}-${pad(pickerMonth + 1)}-${pad(pickerDay)}T${pad(
+      pickerHour
+    )}:${pad(pickerMinute)}`;
+    onReminderDateTimeChange?.(local);
     setDatePickerOpen(false);
   };
 
@@ -141,7 +150,24 @@ export default function BottomInputBar({
 
   const formatDisplayDate = () => {
     if (!reminderDateTime) return "Set date & time";
-    const d = new Date(reminderDateTime);
+    const localMatch = reminderDateTime.match(LOCAL_DATE_TIME_REGEX);
+    if (localMatch) {
+      const year = Number(localMatch[1]);
+      const month = Number(localMatch[2]) - 1;
+      const day = Number(localMatch[3]);
+      const hour = Number(localMatch[4]);
+      const minute = Number(localMatch[5]);
+
+      const weekday = DAYS_OF_WEEK[new Date(year, month, day).getDay()];
+      const hour12 = hour % 12 || 12;
+      const ampm = hour >= 12 ? "PM" : "AM";
+      return `${weekday}, ${MONTHS[month]} ${day}, ${hour12}:${String(
+        minute
+      ).padStart(2, "0")} ${ampm}`;
+    }
+
+    const d = parseReminderDateTime(reminderDateTime);
+    if (!d) return "Set date & time";
     if (isNaN(d.getTime())) return "Set date & time";
     return d.toLocaleString("en-US", {
       weekday: "short", month: "short", day: "numeric",

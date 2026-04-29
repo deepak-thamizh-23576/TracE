@@ -1,5 +1,5 @@
 import { AppColors } from "@/constants/colors";
-import { ReminderItem } from "@/constants/tasks";
+import { ReminderItem, parseReminderDateTime } from "@/constants/tasks";
 import { Ionicons } from "@expo/vector-icons";
 import React from "react";
 import {
@@ -32,12 +32,14 @@ export default function ReminderList({
   const completed = items.filter((r) => r.completed);
 
   // Sort: overdue first, then by reminderDateTime ascending
-  const now = new Date().toISOString();
+  const now = Date.now();
   active.sort((a, b) => {
-    const aOverdue = a.reminderDateTime < now ? 0 : 1;
-    const bOverdue = b.reminderDateTime < now ? 0 : 1;
+    const aTime = parseReminderDateTime(a.snoozedUntil || a.reminderDateTime)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+    const bTime = parseReminderDateTime(b.snoozedUntil || b.reminderDateTime)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+    const aOverdue = aTime < now ? 0 : 1;
+    const bOverdue = bTime < now ? 0 : 1;
     if (aOverdue !== bOverdue) return aOverdue - bOverdue;
-    return a.reminderDateTime.localeCompare(b.reminderDateTime);
+    return aTime - bTime;
   });
 
   return (

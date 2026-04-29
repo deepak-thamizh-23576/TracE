@@ -17,14 +17,16 @@ import {
   ReminderItem,
   Task,
   dateToKey,
+  formatLocalReminderDateTime,
 } from "@/constants/tasks";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBackend } from "@/hooks/useBackend";
 import { useNotifications } from "@/hooks/useNotifications";
+import { useScore } from "@/hooks/useScore";
 import { Redirect } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import type { Href } from "expo-router";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Keyboard,
@@ -68,6 +70,16 @@ export default function Home() {
 
   // ────────── Backend hook (pass auth token) ──────────
   const ds = useBackend(token ?? undefined);
+
+  // ────────── Activity Score ──────────
+  const { score, tier, loading: scoreLoading, recalculate: recalculateScore } = useScore(token ?? undefined);
+
+  // Debounced score recalc — waits 2s after a mutation so the backend has the new data
+  const scoreRecalcTimer = useRef<ReturnType<typeof setTimeout>>();
+  const debouncedRecalcScore = useCallback(() => {
+    if (scoreRecalcTimer.current) clearTimeout(scoreRecalcTimer.current);
+    scoreRecalcTimer.current = setTimeout(() => recalculateScore(), 2000);
+  }, [recalculateScore]);
 
   // ────────── Notifications ──────────
   // Drives food reminders, pending-task alerts, and daily task-log reminder.
@@ -178,6 +190,7 @@ export default function Home() {
     });
     // Send to backend via HTTP
     ds.updateStatus(id, "completed");
+    debouncedRecalcScore();
   };
 
   const handleUncomplete = (id: string) => {
@@ -232,6 +245,7 @@ export default function Home() {
       setTasks((prev) => prev.filter((t) => t.id !== id));
     });
     ds.deleteItem(id);
+    debouncedRecalcScore();
   };
 
   const handleEditDelay = (taskId: string, delayId: string, newReason: string) => {
@@ -291,6 +305,7 @@ export default function Home() {
       );
     });
     ds.updateStatus(id, "dropped");
+    debouncedRecalcScore();
   };
 
   const handleUndropTask = (id: string) => {
@@ -423,6 +438,7 @@ export default function Home() {
       );
     });
     ds.updateStatus(id, "completed");
+    debouncedRecalcScore();
   };
 
   const handleGoalUncomplete = (id: string) => {
@@ -443,6 +459,7 @@ export default function Home() {
       setGoals((prev) => prev.filter((g) => g.id !== id));
     });
     ds.deleteItem(id);
+    debouncedRecalcScore();
   };
 
   const handleGoalEdit = (id: string, newTitle: string) => {
@@ -660,7 +677,9 @@ export default function Home() {
       }).then(() => ds.refresh());
     } else if (activeTab === "Reminder") {
       // Default: remind in 1 hour from now if no datetime set
-      const dt = reminderDateTime || new Date(Date.now() + 3600_000).toISOString().substring(0, 16);
+      const fallback = new Date(Date.now() + 3600_000);
+      const defaultDt = formatLocalReminderDateTime(fallback);
+      const dt = reminderDateTime || defaultDt;
       const newReminder: ReminderItem = {
         id: `r-${Date.now()}`,
         title: inputText.trim(),
@@ -705,6 +724,7 @@ export default function Home() {
     setInputText("");
     setSelectedPriority("medium");
     Keyboard.dismiss();
+    debouncedRecalcScore();
   };
 
   const handleAttach = () => {
@@ -867,6 +887,9 @@ export default function Home() {
         onSearchPress={() => setSearchVisible(true)}
         selectedDate={selectedDate}
         onLogoPress={() => setProfileVisible(true)}
+        score={score}
+        tier={tier}
+        scoreLoading={scoreLoading}
       />
       {renderActiveList()}
       <BottomInputBar
