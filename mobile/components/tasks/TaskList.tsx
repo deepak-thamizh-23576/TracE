@@ -22,12 +22,13 @@ interface TaskListProps {
   onUndrop: (id: string) => void;
   onForkDelay: (taskId: string, delayId: string, delayReason: string) => void;
   onNavigateToTask: (taskId: string) => void;
+  onRemind: (taskId: string, dateTime: string) => void;
   authToken?: string;
   refreshing?: boolean;
   onRefresh?: () => void;
 }
 
-export default function TaskList({ tasks, allTasks, onToggleExpand, onComplete, onSaveDelay, onDelete, onEditDelay, onDeleteDelay, onUncomplete, onEdit, onDrop, onUndrop, onForkDelay, onNavigateToTask, authToken, refreshing, onRefresh }: TaskListProps) {
+export default function TaskList({ tasks, allTasks, onToggleExpand, onComplete, onSaveDelay, onDelete, onEditDelay, onDeleteDelay, onUncomplete, onEdit, onDrop, onUndrop, onForkDelay, onNavigateToTask, onRemind, authToken, refreshing, onRefresh }: TaskListProps) {
   const [showAllPending, setShowAllPending] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
 
@@ -93,6 +94,7 @@ export default function TaskList({ tasks, allTasks, onToggleExpand, onComplete, 
                 onDelayFocus={handleDelayFocus}
                 onForkDelay={(delayId, delayReason) => onForkDelay(task.id, delayId, delayReason)}
                 onNavigateToParent={(parentId) => onNavigateToTask(parentId)}
+                onRemind={(dateTime) => onRemind(task.id, dateTime)}
                 dueDateLabel={showAllPending ? task.dueDate : undefined}
               />
             ) : (

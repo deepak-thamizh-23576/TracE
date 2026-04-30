@@ -18,6 +18,7 @@ import {
   Task,
   dateToKey,
   formatLocalReminderDateTime,
+  parseNaturalReminder,
 } from "@/constants/tasks";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBackend } from "@/hooks/useBackend";
@@ -66,7 +67,6 @@ export default function Home() {
   const [selectedPriority, setSelectedPriority] = useState<Priority>("medium");
   const [selectedMeal, setSelectedMeal] = useState<MealType>("Breakfast");
   const [selectedRecurrence, setSelectedRecurrence] = useState<RecurrenceType>("once");
-  const [reminderDateTime, setReminderDateTime] = useState<string>("");
 
   // ────────── Backend hook (pass auth token) ──────────
   const ds = useBackend(token ?? undefined);
@@ -567,6 +567,33 @@ export default function Home() {
   //  Reminder handlers
   // ────────────────────────────────────────
 
+  const handleRemindTask = (taskId: string, dateTime: string) => {
+    const task = tasks.find((t) => t.id === taskId);
+    if (!task) return;
+    const now = new Date().toLocaleString("en-US", {
+      month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true,
+    });
+    const dueDate = dateTime.split("T")[0];
+    const newReminder: ReminderItem = {
+      id: `r-${Date.now()}`,
+      title: task.title,
+      recurrence: "once",
+      reminderDateTime: dateTime,
+      completed: false,
+      date: now,
+      dueDate,
+    };
+    LayoutAnimation.configureNext(smoothSpring);
+    setReminderItems((prev) => [newReminder, ...prev]);
+    ds.addItem({
+      itemType: "Reminder",
+      itemTypeLevel: "once",
+      itemContent: task.title,
+      status: JSON.stringify({ reminderDateTime: dateTime, completed: false }),
+      createdDate: dueDate,
+    }).then(() => ds.refresh());
+  };
+
   const handleReminderComplete = (id: string) => {
     requestAnimationFrame(() => {
       LayoutAnimation.configureNext(smoothSpring);
@@ -676,30 +703,30 @@ export default function Home() {
         createdDate: dateKey,
       }).then(() => ds.refresh());
     } else if (activeTab === "Reminder") {
-      // Default: remind in 1 hour from now if no datetime set
-      const fallback = new Date(Date.now() + 3600_000);
-      const defaultDt = formatLocalReminderDateTime(fallback);
-      const dt = reminderDateTime || defaultDt;
+      // Parse natural language to extract title, date and time
+      const parsed = parseNaturalReminder(inputText.trim());
+      const dt = parsed.dateTime ?? formatLocalReminderDateTime(new Date(Date.now() + 3600_000));
+      const reminderTitle = parsed.title || inputText.trim();
+      const dueDate = dt.split("T")[0];
       const newReminder: ReminderItem = {
         id: `r-${Date.now()}`,
-        title: inputText.trim(),
+        title: reminderTitle,
         recurrence: selectedRecurrence,
         reminderDateTime: dt,
         completed: false,
         date: now,
-        dueDate: dateKey,
+        dueDate,
       };
       setReminderItems((prev) => [newReminder, ...prev]);
 
       ds.addItem({
         itemType: "Reminder",
         itemTypeLevel: selectedRecurrence,
-        itemContent: inputText.trim(),
+        itemContent: reminderTitle,
         status: JSON.stringify({ reminderDateTime: dt, completed: false }),
-        createdDate: dateKey,
+        createdDate: dueDate,
       }).then(() => ds.refresh());
 
-      setReminderDateTime("");
       setSelectedRecurrence("once");
     } else if (activeTab === "Goal") {
       const newGoal: Goal = {
@@ -788,6 +815,7 @@ export default function Home() {
             onUndrop={handleUndropTask}
             onForkDelay={handleForkDelay}
             onNavigateToTask={handleNavigateToTask}
+            onRemind={handleRemindTask}
             authToken={token ?? undefined}
             refreshing={ds.refreshing}
             onRefresh={ds.refresh}
@@ -841,7 +869,7 @@ export default function Home() {
   const placeholders: Record<TabName, string> = {
     Task: "Add a new task…",
     Food: "Log a food item…",
-    Reminder: "Set a reminder…",
+    Reminder: "e.g. Buy milk today 7pm…",
     Goal: "Add a new goal…",
   };
 
@@ -908,8 +936,6 @@ export default function Home() {
         showReminder={activeTab === "Reminder"}
         selectedRecurrence={selectedRecurrence}
         onRecurrenceChange={setSelectedRecurrence}
-        reminderDateTime={reminderDateTime}
-        onReminderDateTimeChange={setReminderDateTime}
       />
       {showCalendar && (
         <CalendarDropdown

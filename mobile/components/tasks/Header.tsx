@@ -64,8 +64,8 @@ export default function Header({ activeTab, onTabChange, onCalendarPress, onSear
               resizeMode="contain"
             />
           </TouchableOpacity>
-          <View>
-            <Text style={styles.title}>{title}</Text>
+          <View style={styles.titleTextContainer}>
+            <Text style={styles.title} numberOfLines={1}>{title}</Text>
             {showCalendar && <Text style={styles.subtitle}>{formattedDate}</Text>}
           </View>
         </View>
@@ -122,12 +122,18 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 24,
+    marginBottom: 12,
   },
   titleRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    gap: 8,
+    flex: 1,
+    marginRight: 8,
+  },
+  titleTextContainer: {
+    flex: 1,
+    flexShrink: 1,
   },
   logo: {
     width: 32,
@@ -135,13 +141,13 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   title: {
-    fontSize: 24,
+    fontSize: 17,
     fontWeight: "700",
     color: AppColors.textPrimary,
-    letterSpacing: -0.5,
+    letterSpacing: 0.1,
   },
   subtitle: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "500",
     color: AppColors.textSecondary,
     marginTop: 2,
@@ -149,23 +155,19 @@ const styles = StyleSheet.create({
   calendarButton: {
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: AppColors.primarySolid,
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+    width: 32,
+    height: 32,
   },
   iconButton: {
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: AppColors.gray100,
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+    width: 32,
+    height: 32,
   },
   topRightButtons: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: 6,
   },
 
   tabRow: {

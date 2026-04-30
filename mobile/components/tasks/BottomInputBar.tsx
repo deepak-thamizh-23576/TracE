@@ -1,10 +1,11 @@
 import { AppColors } from "@/constants/colors";
 import {
   parseReminderDateTime,
+  parseNaturalReminder,
   Priority,
   RecurrenceType,
 } from "@/constants/tasks";
-import { Entypo, Feather } from "@expo/vector-icons";
+import { Entypo, Feather, Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Animated,
@@ -63,7 +64,6 @@ const LOCAL_DATE_TIME_REGEX =
 function getDaysInMonth(year: number, month: number) {
   return new Date(year, month + 1, 0).getDate();
 }
-
 export default function BottomInputBar({
   value,
   onChangeText,
@@ -87,19 +87,9 @@ export default function BottomInputBar({
   const bottomOffset = useRef(new Animated.Value(0)).current;
   const inputRef = useRef<TextInput>(null);
   const insets = useSafeAreaInsets();
-  const [datePickerOpen, setDatePickerOpen] = useState(false);
 
-  // Parse current reminderDateTime or default to 1 hour from now
-  const parsedDt = parseReminderDateTime(reminderDateTime);
-  const now = new Date();
-  const defaultDt = new Date(now.getTime() + 3600_000);
-  const activeDt = parsedDt && !isNaN(parsedDt.getTime()) ? parsedDt : defaultDt;
-
-  const [pickerYear, setPickerYear] = useState(activeDt.getFullYear());
-  const [pickerMonth, setPickerMonth] = useState(activeDt.getMonth());
-  const [pickerDay, setPickerDay] = useState(activeDt.getDate());
-  const [pickerHour, setPickerHour] = useState(activeDt.getHours());
-  const [pickerMinute, setPickerMinute] = useState(activeDt.getMinutes());
+  // Live NLP parse — recomputed from the current input value
+  const parsedReminder = showReminder ? parseNaturalReminder(value) : null;
 
   useEffect(() => {
     const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
@@ -129,60 +119,7 @@ export default function BottomInputBar({
     };
   }, []);
 
-  const confirmDatePicker = () => {
-    const pad = (n: number) => String(n).padStart(2, "0");
-    const local = `${pickerYear}-${pad(pickerMonth + 1)}-${pad(pickerDay)}T${pad(
-      pickerHour
-    )}:${pad(pickerMinute)}`;
-    onReminderDateTimeChange?.(local);
-    setDatePickerOpen(false);
-  };
-
-  const openDatePicker = () => {
-    // Sync picker state with current value
-    setPickerYear(activeDt.getFullYear());
-    setPickerMonth(activeDt.getMonth());
-    setPickerDay(activeDt.getDate());
-    setPickerHour(activeDt.getHours());
-    setPickerMinute(activeDt.getMinutes());
-    setDatePickerOpen(true);
-  };
-
-  const formatDisplayDate = () => {
-    if (!reminderDateTime) return "Set date & time";
-    const localMatch = reminderDateTime.match(LOCAL_DATE_TIME_REGEX);
-    if (localMatch) {
-      const year = Number(localMatch[1]);
-      const month = Number(localMatch[2]) - 1;
-      const day = Number(localMatch[3]);
-      const hour = Number(localMatch[4]);
-      const minute = Number(localMatch[5]);
-
-      const weekday = DAYS_OF_WEEK[new Date(year, month, day).getDay()];
-      const hour12 = hour % 12 || 12;
-      const ampm = hour >= 12 ? "PM" : "AM";
-      return `${weekday}, ${MONTHS[month]} ${day}, ${hour12}:${String(
-        minute
-      ).padStart(2, "0")} ${ampm}`;
-    }
-
-    const d = parseReminderDateTime(reminderDateTime);
-    if (!d) return "Set date & time";
-    if (isNaN(d.getTime())) return "Set date & time";
-    return d.toLocaleString("en-US", {
-      weekday: "short", month: "short", day: "numeric",
-      hour: "numeric", minute: "2-digit", hour12: true,
-    });
-  };
-
-  // Build calendar grid
-  const daysInMonth = getDaysInMonth(pickerYear, pickerMonth);
-  const firstDayOfWeek = new Date(pickerYear, pickerMonth, 1).getDay();
-  const calendarCells: (number | null)[] = [];
-  for (let i = 0; i < firstDayOfWeek; i++) calendarCells.push(null);
-  for (let d = 1; d <= daysInMonth; d++) calendarCells.push(d);
-
-  const todayKey = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`;
+  // (calendar picker helpers removed — using NLP parsing instead)
 
   return (
     <Animated.View style={[styles.wrapper, { paddingBottom: Animated.add((insets.bottom || 8) + 12, bottomOffset) }]}>
@@ -190,6 +127,7 @@ export default function BottomInputBar({
         {/* ── Reminder controls ── */}
         {showReminder && (
           <>
+            {/* Recurrence chips */}
             <View style={styles.reminderRecurrenceRow}>
               {RECURRENCE_LABELS.map(({ value: r, label }) => (
                 <TouchableOpacity
@@ -204,17 +142,21 @@ export default function BottomInputBar({
                 </TouchableOpacity>
               ))}
             </View>
-            <TouchableOpacity
-              style={styles.datePickerButton}
-              onPress={openDatePicker}
-              activeOpacity={0.7}
-            >
-              <Feather name="calendar" size={16} color={reminderDateTime ? AppColors.primarySolid : AppColors.gray400} />
-              <Text style={[styles.datePickerButtonText, reminderDateTime ? { color: AppColors.textPrimary } : undefined]}>
-                {formatDisplayDate()}
+            {/* Live NLP parse preview */}
+            {parsedReminder?.preview ? (
+              <View style={styles.parsePreviewRow}>
+                <Ionicons name="alarm-outline" size={13} color={AppColors.primarySolid} />
+                <Text style={styles.parsePreviewText}>
+                  <Text style={styles.parsePreviewLabel}>{parsedReminder.title || value.trim()}</Text>
+                  {"  ·  "}
+                  {parsedReminder.preview}
+                </Text>
+              </View>
+            ) : value.trim().length > 0 ? (
+              <Text style={styles.parseHintText}>
+                Tip: include a date &amp; time — e.g. “buy milk today 7pm”
               </Text>
-              <Feather name="chevron-down" size={14} color={AppColors.gray400} />
-            </TouchableOpacity>
+            ) : null}
           </>
         )}
 
@@ -306,94 +248,6 @@ export default function BottomInputBar({
         </View>
       </View>
 
-      {/* ── Custom Date/Time Picker Modal ── */}
-      {showReminder && (
-        <Modal visible={datePickerOpen} transparent animationType="fade" onRequestClose={() => setDatePickerOpen(false)}>
-          <TouchableOpacity style={styles.dtOverlay} activeOpacity={1} onPress={() => setDatePickerOpen(false)}>
-            <TouchableOpacity activeOpacity={1} onPress={(e) => e.stopPropagation()}>
-              <View style={styles.dtCard}>
-                {/* Month/Year nav */}
-                <View style={styles.dtMonthNav}>
-                  <TouchableOpacity onPress={() => { if (pickerMonth === 0) { setPickerMonth(11); setPickerYear(pickerYear - 1); } else setPickerMonth(pickerMonth - 1); }} activeOpacity={0.6}>
-                    <Feather name="chevron-left" size={20} color={AppColors.textPrimary} />
-                  </TouchableOpacity>
-                  <Text style={styles.dtMonthLabel}>{MONTHS[pickerMonth]} {pickerYear}</Text>
-                  <TouchableOpacity onPress={() => { if (pickerMonth === 11) { setPickerMonth(0); setPickerYear(pickerYear + 1); } else setPickerMonth(pickerMonth + 1); }} activeOpacity={0.6}>
-                    <Feather name="chevron-right" size={20} color={AppColors.textPrimary} />
-                  </TouchableOpacity>
-                </View>
-
-                {/* Day-of-week headers */}
-                <View style={styles.dtWeekRow}>
-                  {DAYS_OF_WEEK.map((d) => (
-                    <Text key={d} style={styles.dtWeekDay}>{d}</Text>
-                  ))}
-                </View>
-
-                {/* Calendar grid */}
-                <View style={styles.dtGrid}>
-                  {calendarCells.map((day, i) => {
-                    if (day === null) return <View key={`e${i}`} style={styles.dtCellEmpty} />;
-                    const isSelected = day === pickerDay;
-                    const isToday = `${pickerYear}-${pickerMonth}-${day}` === todayKey;
-                    return (
-                      <TouchableOpacity
-                        key={day}
-                        style={[styles.dtCell, isSelected && styles.dtCellSelected, isToday && !isSelected && styles.dtCellToday]}
-                        onPress={() => setPickerDay(day)}
-                        activeOpacity={0.6}
-                      >
-                        <Text style={[styles.dtCellText, isSelected && styles.dtCellTextSelected]}>{day}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-
-                {/* Time picker row */}
-                <View style={styles.dtTimeRow}>
-                  <Feather name="clock" size={16} color={AppColors.gray400} />
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.dtTimeScroll} contentContainerStyle={{ gap: 4 }}>
-                    {Array.from({ length: 24 }, (_, h) => (
-                      <TouchableOpacity
-                        key={h}
-                        style={[styles.dtTimeChip, pickerHour === h && styles.dtTimeChipActive]}
-                        onPress={() => setPickerHour(h)}
-                        activeOpacity={0.7}
-                      >
-                        <Text style={[styles.dtTimeChipText, pickerHour === h && styles.dtTimeChipTextActive]}>
-                          {h === 0 ? "12 AM" : h < 12 ? `${h} AM` : h === 12 ? "12 PM" : `${h - 12} PM`}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
-                <View style={styles.dtTimeRow}>
-                  <Text style={styles.dtMinLabel}>Min</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.dtTimeScroll} contentContainerStyle={{ gap: 4 }}>
-                    {[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55].map((m) => (
-                      <TouchableOpacity
-                        key={m}
-                        style={[styles.dtTimeChip, pickerMinute === m && styles.dtTimeChipActive]}
-                        onPress={() => setPickerMinute(m)}
-                        activeOpacity={0.7}
-                      >
-                        <Text style={[styles.dtTimeChipText, pickerMinute === m && styles.dtTimeChipTextActive]}>
-                          :{m.toString().padStart(2, "0")}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
-
-                {/* Confirm */}
-                <TouchableOpacity style={styles.dtConfirmBtn} onPress={confirmDatePicker} activeOpacity={0.7}>
-                  <Text style={styles.dtConfirmText}>Confirm</Text>
-                </TouchableOpacity>
-              </View>
-            </TouchableOpacity>
-          </TouchableOpacity>
-        </Modal>
-      )}
     </Animated.View>
   );
 }
@@ -564,7 +418,34 @@ const styles = StyleSheet.create({
   recurrenceChipTextActive: {
     color: AppColors.textPrimary,
   },
-  // ── Date picker trigger button ──
+  // ── Parse preview (NLP reminder) ──
+  parsePreviewRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 4,
+    paddingVertical: 6,
+    marginBottom: 6,
+    backgroundColor: "rgba(var(--primary-rgb), 0.06)",
+  },
+  parsePreviewText: {
+    flex: 1,
+    fontSize: 12,
+    color: AppColors.textSecondary,
+    flexShrink: 1,
+  },
+  parsePreviewLabel: {
+    fontWeight: "700",
+    color: AppColors.textPrimary,
+  },
+  parseHintText: {
+    fontSize: 11,
+    color: AppColors.gray400,
+    paddingHorizontal: 4,
+    marginBottom: 6,
+    fontStyle: "italic",
+  },
+  // ── Date picker trigger button (kept for style ref, no longer rendered) ──
   datePickerButton: {
     flexDirection: "row",
     alignItems: "center",

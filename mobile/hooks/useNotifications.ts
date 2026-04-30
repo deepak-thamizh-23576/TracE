@@ -101,7 +101,7 @@ async function requestPermissions(): Promise<boolean> {
   try {
     if (Platform.OS === "android") {
       await Notifications.setNotificationChannelAsync("trace-default", {
-        name: "TracE Reminders",
+        name: "Reminders",
         importance: Notifications.AndroidImportance.DEFAULT,
         vibrationPattern: [0, 250, 250, 250],
         lightColor: "#6366F1",
@@ -126,7 +126,7 @@ async function scheduleTaskLogReminder(): Promise<void> {
 
     const id = await Notifications.scheduleNotificationAsync({
       content: {
-        title: "TracE — Daily Check-in",
+        title: "Daily Check-in",
         body: "End of day! Log your tasks and activities before you wrap up 📝",
         sound: undefined,
       },
@@ -171,7 +171,7 @@ async function scheduleFoodReminders(food: FoodItem[]): Promise<void> {
     if (!hasBreakfast) {
       updated.breakfast = await Notifications.scheduleNotificationAsync({
         content: {
-          title: "TracE — Breakfast",
+          title: "Breakfast",
           body: "Good morning! Don't forget to log your breakfast 🍳",
           sound: undefined,
         },
@@ -186,7 +186,7 @@ async function scheduleFoodReminders(food: FoodItem[]): Promise<void> {
     if (!hasLunch) {
       updated.lunch = await Notifications.scheduleNotificationAsync({
         content: {
-          title: "TracE — Lunch",
+          title: "Lunch",
           body: "Afternoon check-in! Log your lunch 🍱",
           sound: undefined,
         },
@@ -201,7 +201,7 @@ async function scheduleFoodReminders(food: FoodItem[]): Promise<void> {
     if (!hasDinner) {
       updated.dinner = await Notifications.scheduleNotificationAsync({
         content: {
-          title: "TracE — Dinner",
+          title: "Dinner",
           body: "Evening! Don't forget to log your dinner 🌙",
           sound: undefined,
         },
@@ -232,7 +232,7 @@ async function notifyPendingWithoutDelay(tasks: Task[]): Promise<void> {
 
     await Notifications.scheduleNotificationAsync({
       content: {
-        title: "TracE — Pending Update Needed",
+        title: "Pending Update Needed",
         body:
           count === 1
             ? "1 pending task has no delay reason yet. Tap to add one."
@@ -283,7 +283,7 @@ async function scheduleCustomReminders(reminders: ReminderItem[]): Promise<void>
 
       const id = await Notifications.scheduleNotificationAsync({
         content: {
-          title: `TracE — Reminder${recurrenceLabel}`,
+          title: `Reminder${recurrenceLabel}`,
           body: reminder.title,
           sound: undefined,
         },

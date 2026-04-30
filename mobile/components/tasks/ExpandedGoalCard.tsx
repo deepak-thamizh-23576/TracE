@@ -7,6 +7,7 @@ import {
   Alert,
   Image,
   Keyboard,
+  Modal,
   StyleSheet,
   Text,
   TextInput,
@@ -58,6 +59,18 @@ export default function ExpandedGoalCard({
   const [editingDelayId, setEditingDelayId] = useState<string | null>(null);
   const [editingDelayText, setEditingDelayText] = useState("");
   const editDelayRef = useRef<TextInput>(null);
+
+  // ── Goal three-dot menu ──
+  const [goalMenuOpen, setGoalMenuOpen] = useState(false);
+  const [goalMenuPos, setGoalMenuPos] = useState({ x: 0, y: 0 });
+  const goalMenuBtnRef = useRef<TouchableOpacity>(null);
+
+  const openGoalMenu = () => {
+    goalMenuBtnRef.current?.measure((_fx, _fy, _w, _h, px, py) => {
+      setGoalMenuPos({ x: px, y: py + _h + 4 });
+      setGoalMenuOpen(true);
+    });
+  };
 
   // ── Title edit handlers ──
 
@@ -226,7 +239,40 @@ export default function ExpandedGoalCard({
           )}
         </View>
         <PriorityDot priority={goal.priority} />
+        {/* Three-dot goal menu */}
+        <TouchableOpacity
+          ref={goalMenuBtnRef}
+          style={styles.goalMenuDot}
+          onPress={openGoalMenu}
+          activeOpacity={0.7}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Entypo name="dots-three-vertical" size={16} color={AppColors.textSecondary} />
+        </TouchableOpacity>
       </TouchableOpacity>
+
+      {/* Goal menu Modal */}
+      <Modal
+        visible={goalMenuOpen}
+        transparent
+        animationType="none"
+        onRequestClose={() => setGoalMenuOpen(false)}
+      >
+        <TouchableOpacity style={styles.goalMenuOverlay} activeOpacity={1} onPress={() => setGoalMenuOpen(false)}>
+          <View style={[styles.goalMenuDropdown, { top: goalMenuPos.y, left: Math.max(goalMenuPos.x - 100, 8) }]}>
+            {!isEditingTitle && (
+              <TouchableOpacity style={styles.menuItem} onPress={() => { setGoalMenuOpen(false); handleStartTitleEdit(); }} activeOpacity={0.7}>
+                <MaterialIcons name="edit" size={15} color={AppColors.textPrimary} />
+                <Text style={styles.menuItemText}>Edit</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity style={[styles.menuItem, styles.menuItemDanger]} onPress={() => { setGoalMenuOpen(false); handleDeleteGoal(); }} activeOpacity={0.7}>
+              <MaterialIcons name="delete-outline" size={15} color={AppColors.red600} />
+              <Text style={[styles.menuItemText, styles.menuItemDangerText]}>Delete</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
       {/* Expanded section */}
       <View style={styles.expandedSection}>
@@ -385,49 +431,17 @@ export default function ExpandedGoalCard({
           )}
         </View>
 
-        {/* Action buttons */}
-        <View style={styles.actionRow}>
-          {!isEditingTitle && (
-            <TouchableOpacity
-              style={styles.editButton}
-              onPress={handleStartTitleEdit}
-              activeOpacity={0.7}
-            >
-              <MaterialIcons name="edit" size={14} color={AppColors.textSecondary} />
-              <Text style={styles.editButtonText}>Edit</Text>
-            </TouchableOpacity>
-          )}
+        {/* Save Delay button — only shown when delay text is entered */}
+        {hasDelayInput && (
           <TouchableOpacity
-            style={[
-              styles.delayButton,
-              hasDelayInput && styles.saveDelayButton,
-            ]}
-            onPress={hasDelayInput ? handleSaveDelay : undefined}
-            activeOpacity={hasDelayInput ? 0.8 : 1}
-          >
-            {hasDelayInput ? (
-              <Ionicons name="save-outline" size={16} color={AppColors.white} />
-            ) : (
-              <Ionicons name="timer-outline" size={16} color={AppColors.textPrimary} />
-            )}
-            <Text
-              style={[
-                styles.delayButtonText,
-                hasDelayInput && styles.saveDelayButtonText,
-              ]}
-            >
-              {hasDelayInput ? "Save" : "Delay"}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.deleteButton}
-            onPress={handleDeleteGoal}
+            style={styles.saveDelayButton}
+            onPress={handleSaveDelay}
             activeOpacity={0.8}
           >
-            <MaterialIcons name="delete-outline" size={16} color={AppColors.red600} />
-            <Text style={styles.deleteButtonText}>Delete</Text>
+            <Ionicons name="save-outline" size={16} color={AppColors.white} />
+            <Text style={styles.saveDelayButtonText}>Save Delay</Text>
           </TouchableOpacity>
-        </View>
+        )}
       </View>
     </View>
   );
@@ -439,7 +453,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 2,
     borderColor: AppColors.primarySolid,
-    overflow: "hidden",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
@@ -698,64 +711,64 @@ const styles = StyleSheet.create({
     right: 12,
     padding: 4,
   },
-  // ── Action buttons ──
-  actionRow: {
-    flexDirection: "row",
-    gap: 12,
-    paddingTop: 8,
-  },
-  editButton: {
-    flexDirection: "row",
+  // ── Three-dot goal menu ──
+  goalMenuDot: {
+    width: 28,
+    height: 28,
     alignItems: "center",
     justifyContent: "center",
-    gap: 6,
-    backgroundColor: AppColors.gray50,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 8,
+    marginLeft: 4,
   },
-  editButtonText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: AppColors.textSecondary,
-  },
-  delayButton: {
+  goalMenuOverlay: {
     flex: 1,
+  },
+  goalMenuDropdown: {
+    position: "absolute",
+    backgroundColor: AppColors.white,
+    borderRadius: 10,
+    paddingVertical: 4,
+    minWidth: 140,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+    borderWidth: 1,
+    borderColor: AppColors.gray100,
+  },
+  menuItem: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    backgroundColor: AppColors.primarySolid,
-    paddingVertical: 12,
-    borderRadius: 8,
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
-  saveDelayButton: {
-    backgroundColor: "#22C55E",
-  },
-  delayButtonText: {
+  menuItemText: {
     fontSize: 14,
-    fontWeight: "600",
+    fontWeight: "500",
     color: AppColors.textPrimary,
   },
-  saveDelayButtonText: {
-    color: AppColors.white,
+  menuItemDanger: {
+    borderTopWidth: 1,
+    borderTopColor: AppColors.gray100,
   },
-  deleteButton: {
-    flex: 1,
+  menuItemDangerText: {
+    color: AppColors.red600,
+  },
+  // ── Save delay button ──
+  saveDelayButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
-    backgroundColor: AppColors.red50,
+    backgroundColor: "#22C55E",
     paddingVertical: 12,
     borderRadius: 8,
-    borderWidth: 1,
-    borderColor: AppColors.red100,
   },
-  deleteButtonText: {
+  saveDelayButtonText: {
     fontSize: 14,
     fontWeight: "600",
-    color: AppColors.red600,
+    color: AppColors.white,
   },
   attachPreviewRow: {
     flexDirection: "row",

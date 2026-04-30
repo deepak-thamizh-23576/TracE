@@ -193,10 +193,154 @@ export function parseReminderDateTime(dateTime: string): Date | null {
 
 /** Formats a Date as local "YYYY-MM-DDTHH:mm". */
 export function formatLocalReminderDateTime(date: Date): string {
+
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
     date.getDate()
   )}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+export interface ParsedReminder {
+  /** Cleaned title with date/time tokens stripped out */
+  title: string;
+  /** "YYYY-MM-DDTHH:mm" or null if nothing was detected */
+  dateTime: string | null;
+  /** Human-readable label like "Today, 9:00 PM" */
+  preview: string | null;
+}
+
+/**
+ * Parses a natural language reminder string.
+ * Extracts date ("today", "tomorrow", day names, "Apr 30") and
+ * time ("9pm", "9:00 am", "noon") from the text, strips them out
+ * along with connector words ("for", "at", "on"), and returns a
+ * clean title plus a "YYYY-MM-DDTHH:mm" dateTime.
+ *
+ * Examples:
+ *   "Buy safety pin for today 9:00pm"  → title: "Buy safety pin", dateTime: "2026-04-30T21:00"
+ *   "Call dentist tomorrow at 10am"    → title: "Call dentist", dateTime: "2026-05-01T10:00"
+ *   "Team meeting monday 3:30pm"       → title: "Team meeting", dateTime: "2026-05-04T15:30"
+ */
+export function parseNaturalReminder(text: string): ParsedReminder {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const now = new Date();
+  let working = text;
+  let hour: number | null = null;
+  let minute = 0;
+  let date: Date | null = null;
+
+  // ── 1. Extract time ──
+  const T_HHMM_AMPM = /\b(\d{1,2}):(\d{2})\s*(am|pm)\b/i;
+  const T_H_AMPM    = /\b(\d{1,2})\s*(am|pm)\b/i;
+  const T_NOON_MID  = /\b(noon|midnight)\b/i;
+  const T_24H       = /\b([01]\d|2[0-3]):([0-5]\d)\b/;
+
+  let m: RegExpExecArray | null;
+  if ((m = T_HHMM_AMPM.exec(working))) {
+    hour = parseInt(m[1], 10); minute = parseInt(m[2], 10);
+    const ap = m[3].toLowerCase();
+    if (ap === "am" && hour === 12) hour = 0;
+    if (ap === "pm" && hour !== 12) hour += 12;
+    working = working.slice(0, m.index) + " " + working.slice(m.index + m[0].length);
+  } else if ((m = T_H_AMPM.exec(working))) {
+    hour = parseInt(m[1], 10); minute = 0;
+    const ap = m[2].toLowerCase();
+    if (ap === "am" && hour === 12) hour = 0;
+    if (ap === "pm" && hour !== 12) hour += 12;
+    working = working.slice(0, m.index) + " " + working.slice(m.index + m[0].length);
+  } else if ((m = T_NOON_MID.exec(working))) {
+    hour = m[1].toLowerCase() === "noon" ? 12 : 0; minute = 0;
+    working = working.slice(0, m.index) + " " + working.slice(m.index + m[0].length);
+  } else if ((m = T_24H.exec(working))) {
+    hour = parseInt(m[1], 10); minute = parseInt(m[2], 10);
+    working = working.slice(0, m.index) + " " + working.slice(m.index + m[0].length);
+  }
+
+  // ── 2. Extract date ──
+  const MONTH_MAP: Record<string, number> = {
+    jan:0, feb:1, mar:2, apr:3, may:4, jun:5,
+    jul:6, aug:7, sep:8, oct:9, nov:10, dec:11,
+  };
+  const DAY_MAP: Record<string, number> = {
+    sunday:0, monday:1, tuesday:2, wednesday:3,
+    thursday:4, friday:5, saturday:6,
+  };
+  const MO = "(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)";
+  const DN = "(sunday|monday|tuesday|wednesday|thursday|friday|saturday)";
+
+  const D_TODAY    = /\btoday\b/i;
+  const D_TOMORROW = /\btomorrow\b/i;
+  const D_NEXT_DAY = new RegExp(`\\bnext\\s+${DN}\\b`, "i");
+  const D_DAY_NAME = new RegExp(`\\b${DN}\\b`, "i");
+  const D_MON_DAY  = new RegExp(`\\b${MO}\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b`, "i");
+  const D_DAY_MON  = new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+${MO}\\b`, "i");
+
+  const nextOccurrence = (targetDow: number, minDiff = 1) => {
+    const base = new Date(now);
+    let diff = (targetDow - base.getDay() + 7) % 7;
+    if (diff < minDiff) diff += 7;
+    base.setDate(base.getDate() + diff);
+    return new Date(base.getFullYear(), base.getMonth(), base.getDate());
+  };
+
+  if ((m = D_TODAY.exec(working))) {
+    date = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    working = working.slice(0, m.index) + " " + working.slice(m.index + m[0].length);
+  } else if ((m = D_TOMORROW.exec(working))) {
+    const d = new Date(now); d.setDate(d.getDate() + 1);
+    date = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    working = working.slice(0, m.index) + " " + working.slice(m.index + m[0].length);
+  } else if ((m = D_NEXT_DAY.exec(working))) {
+    date = nextOccurrence(DAY_MAP[m[1].toLowerCase()], 1);
+    working = working.slice(0, m.index) + " " + working.slice(m.index + m[0].length);
+  } else if ((m = D_MON_DAY.exec(working))) {
+    const mo = MONTH_MAP[m[1].toLowerCase().slice(0, 3)];
+    const dy = parseInt(m[2], 10);
+    const d = new Date(now.getFullYear(), mo, dy);
+    if (d < now) d.setFullYear(d.getFullYear() + 1);
+    date = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    working = working.slice(0, m.index) + " " + working.slice(m.index + m[0].length);
+  } else if ((m = D_DAY_MON.exec(working))) {
+    const dy = parseInt(m[1], 10);
+    const mo = MONTH_MAP[m[2].toLowerCase().slice(0, 3)];
+    const d = new Date(now.getFullYear(), mo, dy);
+    if (d < now) d.setFullYear(d.getFullYear() + 1);
+    date = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    working = working.slice(0, m.index) + " " + working.slice(m.index + m[0].length);
+  } else if ((m = D_DAY_NAME.exec(working))) {
+    date = nextOccurrence(DAY_MAP[m[1].toLowerCase()], 1);
+    working = working.slice(0, m.index) + " " + working.slice(m.index + m[0].length);
+  }
+
+  // ── 3. Strip connector words & clean title ──
+  working = working.replace(/\b(for|at|on|by|remind\s+me(\s+to)?)\b/gi, " ");
+  const title = working.replace(/\s+/g, " ").trim();
+
+  // ── 4. Build result ──
+  if (!date && hour === null) {
+    return { title: text.trim(), dateTime: null, preview: null };
+  }
+
+  if (!date) {
+    date = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  }
+
+  const h = hour ?? 9;
+  const finalDate = new Date(date.getFullYear(), date.getMonth(), date.getDate(), h, minute);
+  const dateTime = `${finalDate.getFullYear()}-${pad(finalDate.getMonth() + 1)}-${pad(finalDate.getDate())}T${pad(h)}:${pad(minute)}`;
+
+  const isToday = finalDate.toDateString() === now.toDateString();
+  const isTomorrow = (() => {
+    const t = new Date(now); t.setDate(t.getDate() + 1);
+    return finalDate.toDateString() === t.toDateString();
+  })();
+  const dateLabel = isToday ? "Today" : isTomorrow ? "Tomorrow"
+    : finalDate.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+  const h12 = h % 12 || 12;
+  const ampm = h >= 12 ? "PM" : "AM";
+  const preview = `${dateLabel}, ${h12}:${pad(minute)} ${ampm}`;
+
+  return { title: title || text.trim(), dateTime, preview };
 }
 
 // ──────────── MOCK FOOD DATA ────────────

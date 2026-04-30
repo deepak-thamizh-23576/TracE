@@ -31,6 +31,7 @@ interface ExpandedTaskCardProps {
   onDelayFocus?: () => void;
   onForkDelay?: (delayId: string, delayReason: string) => void;
   onNavigateToParent?: (parentTaskId: string) => void;
+  onRemind?: (dateTime: string) => void;
   dueDateLabel?: string; // YYYY-MM-DD — shown as a pill in all-pending mode
 }
 
@@ -66,6 +67,7 @@ export default function ExpandedTaskCard({
   onDelayFocus,
   onForkDelay,
   onNavigateToParent,
+  onRemind,
   dueDateLabel,
 }: ExpandedTaskCardProps) {
   // Title editing state
@@ -190,6 +192,44 @@ export default function ExpandedTaskCard({
     setAttachmentUri(null);
     setUploadedUrl(null);
     setUploadedKey(null);
+  };
+
+  // Task-level three-dot menu
+  const [taskMenuOpen, setTaskMenuOpen] = useState(false);
+  const [taskMenuPos, setTaskMenuPos] = useState({ x: 0, y: 0 });
+  const taskMenuBtnRef = useRef<TouchableOpacity>(null);
+  // Remind modal
+  const [remindModalOpen, setRemindModalOpen] = useState(false);
+  const [remindDate, setRemindDate] = useState("");
+  const [remindTime, setRemindTime] = useState("");
+  // Ref to focus delay input from the menu
+  const delayInputRef = useRef<TextInput>(null);
+
+  const openTaskMenu = () => {
+    taskMenuBtnRef.current?.measure((_fx, _fy, _w, _h, px, py) => {
+      setTaskMenuPos({ x: px, y: py + _h + 4 });
+      setTaskMenuOpen(true);
+    });
+  };
+
+  const openRemindModal = () => {
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    setRemindDate(`${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`);
+    setRemindTime(`${pad(now.getHours())}:${pad(now.getMinutes())}`);
+    setRemindModalOpen(true);
+  };
+
+  const handleConfirmRemind = () => {
+    if (!remindDate || !remindTime) return;
+    const dt = `${remindDate}T${remindTime}`;
+    const parsed = new Date(dt);
+    if (isNaN(parsed.getTime()) || parsed.getTime() <= Date.now()) {
+      Alert.alert("Invalid time", "Please pick a future date and time.");
+      return;
+    }
+    onRemind?.(dt);
+    setRemindModalOpen(false);
   };
 
   // Editing state for delay history entries
@@ -361,7 +401,94 @@ export default function ExpandedTaskCard({
           )}
         </View>
         <PriorityDot priority={task.priority} />
+        {/* Three-dot task menu */}
+        <TouchableOpacity
+          ref={taskMenuBtnRef}
+          style={styles.taskMenuDot}
+          onPress={openTaskMenu}
+          activeOpacity={0.7}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Entypo name="dots-three-vertical" size={16} color={AppColors.textSecondary} />
+        </TouchableOpacity>
       </TouchableOpacity>
+
+      {/* Remind date/time modal */}
+      <Modal
+        visible={remindModalOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setRemindModalOpen(false)}
+      >
+        <View style={styles.remindOverlay}>
+          <View style={styles.remindSheet}>
+            <Text style={styles.remindTitle}>Set Reminder</Text>
+            <Text style={styles.remindTaskName} numberOfLines={2}>{task.title}</Text>
+            <View style={styles.remindFields}>
+              <View style={styles.remindField}>
+                <Text style={styles.remindFieldLabel}>DATE</Text>
+                <TextInput
+                  style={styles.remindInput}
+                  value={remindDate}
+                  onChangeText={setRemindDate}
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor={AppColors.gray400}
+                  keyboardType="numbers-and-punctuation"
+                />
+              </View>
+              <View style={styles.remindField}>
+                <Text style={styles.remindFieldLabel}>TIME</Text>
+                <TextInput
+                  style={styles.remindInput}
+                  value={remindTime}
+                  onChangeText={setRemindTime}
+                  placeholder="HH:MM"
+                  placeholderTextColor={AppColors.gray400}
+                  keyboardType="numbers-and-punctuation"
+                />
+              </View>
+            </View>
+            <View style={styles.remindActions}>
+              <TouchableOpacity style={styles.remindCancelBtn} onPress={() => setRemindModalOpen(false)} activeOpacity={0.7}>
+                <Text style={styles.remindCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.remindConfirmBtn} onPress={handleConfirmRemind} activeOpacity={0.8}>
+                <Ionicons name="alarm-outline" size={14} color={AppColors.textPrimary} />
+                <Text style={styles.remindConfirmText}>Set Reminder</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+      <Modal
+        visible={taskMenuOpen}
+        transparent
+        animationType="none"
+        onRequestClose={() => setTaskMenuOpen(false)}
+      >
+        <TouchableOpacity style={styles.taskMenuOverlay} activeOpacity={1} onPress={() => setTaskMenuOpen(false)}>
+          <View style={[styles.taskMenuDropdown, { top: taskMenuPos.y, right: undefined, left: Math.max(taskMenuPos.x - 100, 8) }]}>
+            {!isEditingTitle && (
+              <TouchableOpacity style={styles.menuItem} onPress={() => { setTaskMenuOpen(false); handleStartTitleEdit(); }} activeOpacity={0.7}>
+                <MaterialIcons name="edit" size={15} color={AppColors.textPrimary} />
+                <Text style={styles.menuItemText}>Edit</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity style={styles.menuItem} onPress={() => { setTaskMenuOpen(false); handleDropTask(); }} activeOpacity={0.7}>
+              <MaterialIcons name="block" size={15} color={AppColors.gray400} />
+              <Text style={styles.menuItemText}>Drop</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.menuItem} onPress={() => { setTaskMenuOpen(false); openRemindModal(); }} activeOpacity={0.7}>
+              <Ionicons name="alarm-outline" size={15} color={AppColors.textPrimary} />
+              <Text style={styles.menuItemText}>Remind</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.menuItem, styles.menuItemDanger]} onPress={() => { setTaskMenuOpen(false); handleDeleteTask(); }} activeOpacity={0.7}>
+              <MaterialIcons name="delete-outline" size={15} color={AppColors.red600} />
+              <Text style={[styles.menuItemText, styles.menuItemDangerText]}>Delete</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
       {/* Expanded section */}
       <View style={styles.expandedSection}>
@@ -564,6 +691,7 @@ export default function ExpandedTaskCard({
           </View>
           <View style={styles.inputContainer}>
             <TextInput
+              ref={delayInputRef}
               style={styles.input}
               placeholder="Reason for delay"
               placeholderTextColor={AppColors.gray400}
@@ -593,57 +721,13 @@ export default function ExpandedTaskCard({
           )}
         </View>
 
-        {/* Action buttons */}
-        <View style={styles.actionRow}>
-          {!isEditingTitle && (
-            <TouchableOpacity
-              style={styles.editButton}
-              onPress={handleStartTitleEdit}
-              activeOpacity={0.7}
-            >
-              <MaterialIcons name="edit" size={14} color={AppColors.textSecondary} />
-              <Text style={styles.editButtonText}>Edit</Text>
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity
-            style={[
-              styles.delayButton,
-              hasDelayInput && styles.saveButton,
-            ]}
-            onPress={hasDelayInput ? handleSave : undefined}
-            activeOpacity={hasDelayInput ? 0.8 : 1}
-          >
-            {hasDelayInput ? (
-              <Ionicons name="save-outline" size={14} color={AppColors.white} />
-            ) : (
-              <Ionicons name="timer-outline" size={14} color={AppColors.textPrimary} />
-            )}
-            <Text
-              style={[
-                styles.delayButtonText,
-                hasDelayInput && styles.saveButtonText,
-              ]}
-            >
-              {hasDelayInput ? "Save" : "Delay"}
-            </Text>
+        {/* Save delay button — only visible when there's input */}
+        {hasDelayInput && (
+          <TouchableOpacity style={styles.saveDelayButton} onPress={handleSave} activeOpacity={0.8}>
+            <Ionicons name="save-outline" size={14} color={AppColors.white} />
+            <Text style={styles.saveDelayButtonText}>Save Delay</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.dropButton}
-            onPress={handleDropTask}
-            activeOpacity={0.8}
-          >
-            <MaterialIcons name="block" size={14} color={AppColors.gray400} />
-            <Text style={styles.dropButtonText}>Drop</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.deleteButton}
-            onPress={handleDeleteTask}
-            activeOpacity={0.8}
-          >
-            <MaterialIcons name="delete-outline" size={14} color={AppColors.red600} />
-            <Text style={styles.deleteButtonText}>Delete</Text>
-          </TouchableOpacity>
-        </View>
+        )}
       </View>
     </View>
   );
@@ -655,7 +739,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 2,
     borderColor: AppColors.primarySolid,
-    overflow: "hidden",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
@@ -1112,6 +1195,43 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: AppColors.textSecondary,
   },
+  // ── Task-level three-dot menu ──
+  taskMenuDot: {
+    padding: 6,
+    borderRadius: 6,
+    marginLeft: 8,
+  },
+  taskMenuOverlay: {
+    flex: 1,
+  },
+  taskMenuDropdown: {
+    position: "absolute",
+    backgroundColor: AppColors.white,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: AppColors.gray200,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    elevation: 20,
+    minWidth: 150,
+    overflow: "hidden",
+  },
+  saveDelayButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: "#22C55E",
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  saveDelayButtonText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: AppColors.white,
+  },
   // ── Edit & Drop buttons ──
   editButton: {
     flex: 1,
@@ -1144,6 +1264,94 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
     color: AppColors.gray400,
+  },
+  // ── Remind modal ──
+  remindOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+  },
+  remindSheet: {
+    backgroundColor: AppColors.white,
+    borderRadius: 16,
+    padding: 24,
+    width: "100%",
+    maxWidth: 360,
+    gap: 16,
+  },
+  remindTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: AppColors.textPrimary,
+  },
+  remindTaskName: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: AppColors.textSecondary,
+    backgroundColor: AppColors.gray100,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  remindFields: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  remindField: {
+    flex: 1,
+    gap: 4,
+  },
+  remindFieldLabel: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: AppColors.textSecondary,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  remindInput: {
+    borderWidth: 1,
+    borderColor: AppColors.gray200,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: AppColors.textPrimary,
+    backgroundColor: AppColors.white,
+  },
+  remindActions: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 4,
+  },
+  remindCancelBtn: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: AppColors.gray100,
+  },
+  remindCancelText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: AppColors.textSecondary,
+  },
+  remindConfirmBtn: {
+    flex: 2,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: AppColors.primarySolid,
+  },
+  remindConfirmText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: AppColors.textPrimary,
   },
   // ── Full-screen image viewer ──
   imageViewerOverlay: {
