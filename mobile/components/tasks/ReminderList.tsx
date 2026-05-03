@@ -1,18 +1,20 @@
 import { AppColors } from "@/constants/colors";
 import { ReminderItem, parseReminderDateTime } from "@/constants/tasks";
 import { Ionicons } from "@expo/vector-icons";
-import React from "react";
+import React, { useState } from "react";
 import {
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from "react-native";
 import ReminderCard from "./ReminderCard";
 
 interface ReminderListProps {
-  items: ReminderItem[];
+  items: ReminderItem[];      // date-filtered reminders
+  allItems: ReminderItem[];   // all reminders across all dates
   refreshing?: boolean;
   onRefresh?: () => void;
   onComplete?: (id: string) => void;
@@ -22,14 +24,18 @@ interface ReminderListProps {
 
 export default function ReminderList({
   items,
+  allItems,
   refreshing,
   onRefresh,
   onComplete,
   onDelete,
   onSnooze,
 }: ReminderListProps) {
-  const active = items.filter((r) => !r.completed);
-  const completed = items.filter((r) => r.completed);
+  const [showAll, setShowAll] = useState(false);
+
+  const sourceItems = showAll ? allItems : items;
+  const active = sourceItems.filter((r) => !r.completed);
+  const completed = sourceItems.filter((r) => r.completed);
 
   // Sort: overdue first, then by reminderDateTime ascending
   const now = Date.now();
@@ -42,6 +48,8 @@ export default function ReminderList({
     return aTime - bTime;
   });
 
+  const totalCount = allItems.filter((r) => !r.completed).length;
+
   return (
     <ScrollView
       style={styles.root}
@@ -53,21 +61,32 @@ export default function ReminderList({
         ) : undefined
       }
     >
-      {items.length === 0 ? (
+      {sourceItems.length === 0 ? (
         <View style={styles.emptyState}>
           <Ionicons name="notifications-off-outline" size={40} color={AppColors.gray300} />
           <Text style={styles.emptyTitle}>No reminders</Text>
           <Text style={styles.emptySubtitle}>
-            Add a reminder using the input below
+            {showAll ? "No reminders at all" : "None for this date — tap the badge to see all"}
           </Text>
         </View>
       ) : (
         <>
           {active.length > 0 && (
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>
-                Upcoming · {active.length}
-              </Text>
+              <TouchableOpacity
+                style={styles.sectionTitleRow}
+                onPress={() => setShowAll((v) => !v)}
+                activeOpacity={0.6}
+              >
+                <Text style={styles.sectionTitle}>
+                  {showAll ? `All Upcoming (${active.length})` : `Upcoming · ${active.length}`}
+                </Text>
+                <View style={[styles.badge, showAll && styles.badgeActive]}>
+                  <Text style={[styles.badgeText, showAll && styles.badgeTextActive]}>
+                    {showAll ? "Date view" : `${totalCount} total`}
+                  </Text>
+                </View>
+              </TouchableOpacity>
               <View style={styles.cardList}>
                 {active.map((item) => (
                   <ReminderCard
@@ -83,9 +102,11 @@ export default function ReminderList({
           )}
           {completed.length > 0 && (
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>
-                Done · {completed.length}
-              </Text>
+              <View style={styles.sectionTitleRow}>
+                <Text style={styles.sectionTitle}>
+                  Done · {completed.length}
+                </Text>
+              </View>
               <View style={styles.cardList}>
                 {completed.map((item) => (
                   <ReminderCard
@@ -108,11 +129,13 @@ export default function ReminderList({
 const styles = StyleSheet.create({
   root: {
     flex: 1,
+    backgroundColor: AppColors.white,
   },
   content: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
+    paddingHorizontal: 24,
+    paddingTop: 24,
     paddingBottom: 120,
+    gap: 32,
   },
   emptyState: {
     alignItems: "center",
@@ -131,18 +154,40 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   section: {
-    marginBottom: 16,
+    gap: 16,
   },
-  sectionTitle: {
-    fontSize: 10,
-    fontWeight: "700",
-    textTransform: "uppercase",
-    letterSpacing: 0.8,
-    color: AppColors.gray400,
-    marginBottom: 8,
+  sectionTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
     paddingHorizontal: 4,
   },
+  sectionTitle: {
+    fontSize: 11,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 1.5,
+    color: AppColors.textSecondary,
+  },
+  badge: {
+    backgroundColor: AppColors.gray100,
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+  },
+  badgeActive: {
+    backgroundColor: AppColors.primarySolid,
+  },
+  badgeText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: AppColors.textSecondary,
+    letterSpacing: 0.3,
+  },
+  badgeTextActive: {
+    color: AppColors.textPrimary,
+  },
   cardList: {
-    gap: 8,
+    gap: 12,
   },
 });

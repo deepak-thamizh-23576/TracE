@@ -70,15 +70,15 @@ export default function Header({ activeTab, onTabChange, onCalendarPress, onSear
           </View>
         </View>
         <View style={styles.topRightButtons}>
-          <ScoreBadge score={score ?? null} tier={tier ?? null} loading={scoreLoading} />
+          <TouchableOpacity style={styles.iconButton} activeOpacity={0.7} onPress={onSearchPress}>
+            <HugeiconsIcon icon={Search01Icon} size={18} color={AppColors.textPrimary} />
+          </TouchableOpacity>
           {showCalendar && (
             <TouchableOpacity style={styles.calendarButton} activeOpacity={0.7} onPress={onCalendarPress}>
               <HugeiconsIcon icon={CalendarMinus02Icon} size={18} color={AppColors.textPrimary} />
             </TouchableOpacity>
           )}
-          <TouchableOpacity style={styles.iconButton} activeOpacity={0.7} onPress={onSearchPress}>
-            <HugeiconsIcon icon={Search01Icon} size={18} color={AppColors.textPrimary} />
-          </TouchableOpacity>
+          <ScoreBadge score={score ?? null} tier={tier ?? null} loading={scoreLoading} />
         </View>
       </View>
 

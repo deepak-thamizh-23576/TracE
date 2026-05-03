@@ -30,6 +30,7 @@ import type { Href } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Animated,
   Keyboard,
   LayoutAnimation,
   Platform,
@@ -67,6 +68,21 @@ export default function Home() {
   const [selectedPriority, setSelectedPriority] = useState<Priority>("medium");
   const [selectedMeal, setSelectedMeal] = useState<MealType>("Breakfast");
   const [selectedRecurrence, setSelectedRecurrence] = useState<RecurrenceType>("once");
+
+  // ────────── In-app reminder creation toast ──────────
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const toastAnim = useRef(new Animated.Value(0)).current;
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  const showReminderToast = useCallback((preview: string) => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToastMessage(preview);
+    Animated.sequence([
+      Animated.timing(toastAnim, { toValue: 1, duration: 250, useNativeDriver: true }),
+      Animated.delay(2500),
+      Animated.timing(toastAnim, { toValue: 0, duration: 300, useNativeDriver: true }),
+    ]).start(() => setToastMessage(null));
+  }, [toastAnim]);
 
   // ────────── Backend hook (pass auth token) ──────────
   const ds = useBackend(token ?? undefined);
@@ -585,6 +601,12 @@ export default function Home() {
     };
     LayoutAnimation.configureNext(smoothSpring);
     setReminderItems((prev) => [newReminder, ...prev]);
+    // Show in-app toast with scheduled time
+    const d = new Date(dateTime);
+    const timeLabel = isNaN(d.getTime())
+      ? dateTime
+      : d.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true });
+    showReminderToast(`Reminder set for ${timeLabel}`);
     ds.addItem({
       itemType: "Reminder",
       itemTypeLevel: "once",
@@ -718,6 +740,12 @@ export default function Home() {
         dueDate,
       };
       setReminderItems((prev) => [newReminder, ...prev]);
+      // Show in-app toast with scheduled time
+      const previewLabel = parsed.preview ?? (() => {
+        const d = new Date(dt);
+        return isNaN(d.getTime()) ? dt : d.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true });
+      })();
+      showReminderToast(`Reminder set • ${previewLabel}`);
 
       ds.addItem({
         itemType: "Reminder",
@@ -835,6 +863,7 @@ export default function Home() {
         return (
           <ReminderList
             items={filteredReminders}
+            allItems={reminderItems}
             refreshing={ds.refreshing}
             onRefresh={ds.refresh}
             onComplete={handleReminderComplete}
@@ -1069,6 +1098,22 @@ export default function Home() {
           </View>
         );
       })()}
+
+      {/* ── In-app reminder creation toast ── */}
+      {toastMessage && (
+        <Animated.View
+          style={[
+            styles.toastBanner,
+            {
+              opacity: toastAnim,
+              transform: [{ translateY: toastAnim.interpolate({ inputRange: [0, 1], outputRange: [-20, 0] }) }],
+            },
+          ]}
+          pointerEvents="none"
+        >
+          <Text style={styles.toastText}>{toastMessage}</Text>
+        </Animated.View>
+      )}
     </View>
   );
 }
@@ -1077,6 +1122,27 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#FFFFFF",
+  },
+  toastBanner: {
+    position: "absolute",
+    top: 56,
+    alignSelf: "center",
+    backgroundColor: "#111827",
+    borderRadius: 24,
+    paddingHorizontal: 18,
+    paddingVertical: 9,
+    zIndex: 9999,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  toastText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#FFFFFF",
+    letterSpacing: 0.2,
   },
   forkModalOverlay: {
     position: "absolute",
