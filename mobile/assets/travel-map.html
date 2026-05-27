@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Travel Map</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; background: #f9f9f9; }
+    #map { width: 100%; height: 100%; }
+
+    /* Custom yellow pin */
+    .te-pin {
+      width: 28px;
+      height: 28px;
+      background: #FFD900;
+      border: 3px solid #111827;
+      border-radius: 50% 50% 50% 0;
+      transform: rotate(-45deg);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    }
+    .te-pin-inner {
+      width: 10px;
+      height: 10px;
+      background: #111827;
+      border-radius: 50%;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+    }
+
+    /* Popup styling */
+    .leaflet-popup-content-wrapper {
+      border-radius: 16px !important;
+      padding: 0 !important;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.15) !important;
+      border: none !important;
+      overflow: hidden;
+    }
+    .leaflet-popup-content {
+      margin: 0 !important;
+      width: auto !important;
+      min-width: 200px;
+    }
+    .leaflet-popup-tip-container { display: none; }
+    .popup-card {
+      padding: 14px 16px;
+      background: #fff;
+    }
+    .popup-title {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 14px;
+      font-weight: 700;
+      color: #111827;
+      margin-bottom: 4px;
+      line-height: 1.3;
+    }
+    .popup-date {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 11px;
+      color: #6B7280;
+      margin-bottom: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .popup-delete {
+      width: 100%;
+      padding: 8px;
+      background: #FEE2E2;
+      color: #EF4444;
+      border: none;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      cursor: pointer;
+      letter-spacing: 0.3px;
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV/XN/sp38="
+    crossorigin="anonymous"
+  ></script>
+  <script>
+    // ── Init map ──
+    var map = L.map('map', {
+      center: [20.5937, 78.9629],
+      zoom: 5,
+      zoomControl: true,
+      attributionControl: false,
+    });
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      // keepBuffer caches more tiles to reduce blank tile flashes on pan
+      keepBuffer: 4,
+    }).addTo(map);
+
+    // ── Marker registry ──
+    var markers = {}; // id → L.Marker
+
+    function formatVisitDate(dateStr) {
+      if (!dateStr) return '';
+      var parts = dateStr.split('-');
+      if (parts.length !== 3) return dateStr;
+      var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      return months[parseInt(parts[1], 10) - 1] + ' ' + parseInt(parts[2], 10) + ', ' + parts[0];
+    }
+
+    function createPinIcon() {
+      return L.divIcon({
+        html: '<div class="te-pin"><div class="te-pin-inner"></div></div>',
+        className: '',
+        iconSize: [28, 28],
+        iconAnchor: [14, 28],
+        popupAnchor: [0, -30],
+      });
+    }
+
+    function createPopupHtml(id, title, visitDate) {
+      return '<div class="popup-card">'
+        + '<div class="popup-title">' + escapeHtml(title) + '</div>'
+        + '<div class="popup-date">' + formatVisitDate(visitDate) + '</div>'
+        + '<button class="popup-delete" onclick="deleteMarker(\'' + id + '\')">'
+        + '✕ Remove place'
+        + '</button>'
+        + '</div>';
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    // ── Public API called via injectJavaScript ──
+
+    window.addMarker = function(id, lat, lng, title, visitDate) {
+      if (markers[id]) return; // already exists
+      var marker = L.marker([lat, lng], { icon: createPinIcon() });
+      marker.bindPopup(createPopupHtml(id, title, visitDate), {
+        maxWidth: 260,
+        minWidth: 200,
+      });
+      marker.addTo(map);
+      markers[id] = marker;
+    };
+
+    window.removeMarker = function(id) {
+      if (markers[id]) {
+        map.removeLayer(markers[id]);
+        delete markers[id];
+      }
+    };
+
+    window.fitToMarkers = function() {
+      var keys = Object.keys(markers);
+      if (keys.length === 0) return;
+      if (keys.length === 1) {
+        var m = markers[keys[0]];
+        map.setView(m.getLatLng(), 12);
+        return;
+      }
+      var group = new L.featureGroup(Object.values(markers));
+      map.fitBounds(group.getBounds().pad(0.3));
+    };
+
+    window.clearMarkers = function() {
+      Object.keys(markers).forEach(function(id) {
+        map.removeLayer(markers[id]);
+      });
+      markers = {};
+    };
+
+    function deleteMarker(id) {
+      // Notify React Native
+      if (window.ReactNativeWebView) {
+        window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'delete', id: id }));
+      }
+      // Optimistically remove from map right away
+      window.removeMarker(id);
+    }
+
+    // Signal React Native that the map is ready
+    window.addEventListener('load', function() {
+      if (window.ReactNativeWebView) {
+        window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'ready' }));
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,10 +1,4 @@
 {
-  "slate": [
-    {
-      "name": "TrackEverythingTe",
-      "source": "/Users/deepak-23576/Documents/Track Everything/TE-codeBase/TrackEverythingTe"
-    }
-  ],
   "functions": {
     "targets": [
       "track_everything_te_function"

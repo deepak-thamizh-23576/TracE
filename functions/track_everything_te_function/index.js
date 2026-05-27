@@ -20,7 +20,8 @@ app.use(cors({
     // Allow any localhost origin (any port) for local dev
     if (/^http:\/\/localhost(:\d+)?$/.test(origin)) return callback(null, true);
     const allowed = [
-      "https://trackeverythingte-904503171.development.catalystserverless.com"
+      "https://trackeverythingte-904503171.development.catalystserverless.com",
+      "https://trackeverythingte-904503171.catalystserverless.com",
     ];
     if (allowed.includes(origin)) return callback(null, true);
     callback(new Error(`CORS blocked: ${origin}`));
@@ -199,6 +200,96 @@ app.post("/auth/logout", authMiddleware, async (req, res) => {
   }
 });
 
+// ──────────── PASSWORD RESET ROUTES ────────────
+
+// POST /auth/forgot-password
+// Generates a 6-digit code, stores it with 1-hour expiry, and emails it to the user.
+// NOTE: TeUsers table must have resetToken (Single Line) and resetTokenExpiry (Single Line) columns.
+app.post("/auth/forgot-password", async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: "email is required" });
+
+    const catalystApp = catalyst.initialize(req);
+    const zcql = catalystApp.zcql();
+
+    const rows = await zcql.executeZCQLQuery(
+      `SELECT ROWID, firstName FROM TeUsers WHERE email='${email}'`
+    );
+
+    // Always respond with success to avoid user enumeration attacks
+    if (!rows || rows.length === 0) {
+      return res.json({ success: true });
+    }
+
+    const user = rows[0].TeUsers;
+    const code = Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit OTP
+    const expiry = (Date.now() + 60 * 60 * 1000).toString(); // 1 hour from now
+
+    await zcql.executeZCQLQuery(
+      `UPDATE TeUsers SET resetToken='${code}', resetTokenExpiry='${expiry}' WHERE ROWID='${user.ROWID}'`
+    );
+
+    // Send email via Catalyst mail service
+    const mail = catalystApp.email();
+    await mail.sendMail({
+      from_email: "noreply@traceverything.app",
+      to_email: [email],
+      subject: "Your TracE password reset code",
+      content: `Hi ${user.firstName},\n\nYour TracE password reset code is:\n\n  ${code}\n\nThis code expires in 1 hour. If you didn't request this, you can safely ignore this email.\n\n— The TracE team`,
+      html_mode: false,
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Forgot password error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /auth/reset-password
+// Verifies the 6-digit code and updates the user's password.
+app.post("/auth/reset-password", async (req, res) => {
+  try {
+    const { email, code, newPassword } = req.body;
+    if (!email || !code || !newPassword) {
+      return res.status(400).json({ error: "email, code, and newPassword are required" });
+    }
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: "Password must be at least 6 characters" });
+    }
+
+    const catalystApp = catalyst.initialize(req);
+    const zcql = catalystApp.zcql();
+
+    const rows = await zcql.executeZCQLQuery(
+      `SELECT ROWID, resetToken, resetTokenExpiry FROM TeUsers WHERE email='${email}'`
+    );
+    if (!rows || rows.length === 0) {
+      return res.status(400).json({ error: "Invalid reset code" });
+    }
+
+    const user = rows[0].TeUsers;
+    if (!user.resetToken || user.resetToken !== code) {
+      return res.status(400).json({ error: "Invalid reset code" });
+    }
+    if (!user.resetTokenExpiry || Date.now() > parseInt(user.resetTokenExpiry, 10)) {
+      return res.status(400).json({ error: "Reset code has expired. Please request a new one." });
+    }
+
+    const { salt, hash } = hashPassword(newPassword);
+    const newSessionToken = generateToken();
+    await zcql.executeZCQLQuery(
+      `UPDATE TeUsers SET passwordHash='${hash}', passwordSalt='${salt}', sessionToken='${newSessionToken}', resetToken='', resetTokenExpiry='' WHERE ROWID='${user.ROWID}'`
+    );
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Reset password error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ──────────── CRUD ROUTES (protected) ────────────
 
 app.post("/add", authMiddleware, async (req, res) => {
@@ -208,7 +299,7 @@ app.post("/add", authMiddleware, async (req, res) => {
     const catalystApp = catalyst.initialize(req);
     const table = catalystApp.datastore().table("TeMain");
 
-    await table.insertRow({
+    const result = await table.insertRow({
       itemType,
       itemTypeLevel,
       itemContent,
@@ -217,7 +308,7 @@ app.post("/add", authMiddleware, async (req, res) => {
       userId: String(req.userId),
     });
 
-    res.json({ success: true });
+    res.json({ success: true, id: result.ROWID ?? result.rowId });
   } catch (err) {
     console.error("add error:", err);
     res.status(500).json({ error: err.message });
@@ -684,16 +775,32 @@ app.post("/score/calculate", authMiddleware, async (req, res) => {
       if (meals.size === 4) fullMealDays++;
     }
 
-    // Count empty-task days and empty-food days in the 7-day window
+    // Only penalise empty days that fall within the user's "active" period.
+    // An active period starts from the earliest day the user had ANY item in the window,
+    // so we don't punish someone for days before they started using the app consistently.
+    const allActivityDates = new Set([...taskDateSet, ...foodDateSet]);
+    let firstActiveDay = null;
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(windowStartDate);
+      d.setDate(d.getDate() + i);
+      const dk = toDateKey(d);
+      if (allActivityDates.has(dk)) { firstActiveDay = dk; break; }
+    }
+
     let emptyTaskDays = 0;
     let emptyFoodDays = 0;
     for (let i = 0; i < 7; i++) {
       const d = new Date(windowStartDate);
       d.setDate(d.getDate() + i);
       const dk = toDateKey(d);
+      // Skip days before the user's first activity — don't penalise pre-adoption gaps
+      if (firstActiveDay && dk < firstActiveDay) continue;
       if (!taskDateSet.has(dk)) emptyTaskDays++;
       if (!foodDateSet.has(dk)) emptyFoodDays++;
     }
+
+    // Cap stale task penalty at 5 tasks max so old backlogs don't nuke the score
+    const cappedStaleTasks = Math.min(staleTasks, 5);
 
     // ── Tally ──
     const totalPositive =
@@ -708,7 +815,7 @@ app.post("/score/calculate", authMiddleware, async (req, res) => {
     const totalNegative =
       (emptyTaskDays * -5) +
       (emptyFoodDays * -3) +
-      (staleTasks * -2) +
+      (cappedStaleTasks * -2) +
       (droppedTasks * -1);
 
     const score = Math.max(0, Math.min(100, 50 + totalPositive + totalNegative));
@@ -730,7 +837,7 @@ app.post("/score/calculate", authMiddleware, async (req, res) => {
       remindersCompleted,
       emptyTaskDays,
       emptyFoodDays,
-      staleTasks,
+      staleTasks: cappedStaleTasks,
       droppedTasks,
       totalPositive,
       totalNegative,
@@ -765,6 +872,52 @@ app.post("/score/calculate", authMiddleware, async (req, res) => {
     res.json({ score, tier, breakdown });
   } catch (err) {
     console.error("score/calculate error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ──────────── TRAVEL ROUTES ────────────
+
+/**
+ * GET /travel/list
+ * Returns all visited places for the authenticated user.
+ * Kept separate from /listAll to avoid bloating the main sync.
+ */
+app.get("/travel/list", authMiddleware, async (req, res) => {
+  try {
+    const catalystApp = catalyst.initialize(req);
+    const zcql = catalystApp.zcql();
+    const uid = String(req.userId);
+
+    const PAGE_SIZE = 300;
+    let allItems = [];
+    let offset = 0;
+    while (true) {
+      const batch = await zcql.executeZCQLQuery(
+        `SELECT ROWID, itemContent, itemTypeLevel, taskDate, status FROM TeMain WHERE userId='${uid}' AND itemType='Travel' ORDER BY CREATEDTIME DESC LIMIT ${offset},${PAGE_SIZE}`
+      );
+      const rows = batch.map(r => r.TeMain);
+      allItems = allItems.concat(rows);
+      if (rows.length < PAGE_SIZE) break;
+      offset += PAGE_SIZE;
+    }
+
+    const places = allItems.map(row => {
+      const [lat, lng] = (row.itemTypeLevel || "0,0").split(",").map(Number);
+      return {
+        id: String(row.ROWID),
+        title: row.itemContent || "",
+        address: row.itemContent || "",
+        latitude: lat || 0,
+        longitude: lng || 0,
+        visitDate: (row.taskDate || "").substring(0, 10),
+        status: row.status || "visited",
+      };
+    });
+
+    res.json({ places });
+  } catch (err) {
+    console.error("travel/list error:", err);
     res.status(500).json({ error: err.message });
   }
 });

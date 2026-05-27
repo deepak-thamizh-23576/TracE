@@ -1,0 +1,78 @@
+flowchart TB
+  builder["Deepak\nProduct decisions + prompts"]
+  llm["AI coding workflow\nPrompt-driven implementation"]
+
+  builder -. directs .-> llm
+  llm -. ships .-> mobile
+  llm -. ships .-> api
+
+  user["User"] --> mobile
+
+  subgraph app["Expo React Native App"]
+    mobile["TracE mobile shell\nexpo-router + React Native + TypeScript"]
+    authUI["Auth flows\nLogin · Signup · Forgot Password · Reset Password"]
+    homeUI["Daily tracking hub\nTasks · Food · Reminders · Goals"]
+    travelUI["Travel module\nSaved places · Wishlist · Live trip tracking"]
+    searchUI["Search + planning UI\nCalendar · Search overlay · Profile panel"]
+    hooks["App state + hooks\nAuthContext · useBackend · useNotifications · useScore"]
+
+    mobile --> authUI
+    mobile --> homeUI
+    mobile --> travelUI
+    mobile --> searchUI
+    authUI --> hooks
+    homeUI --> hooks
+    travelUI --> hooks
+    searchUI --> hooks
+  end
+
+  subgraph device["On-device services"]
+    secure["Secure storage\nexpo-secure-store / localStorage"]
+    notif["Notification engine\nexpo-notifications"]
+    gps["Location tracking\nexpo-location"]
+    map["Interactive map\nWebView + Leaflet HTML"]
+  end
+
+  hooks --> secure
+  hooks --> notif
+  travelUI --> gps
+  travelUI --> map
+
+  subgraph external["External APIs"]
+    nominatim["OpenStreetMap / Nominatim\nPlace search + reverse geocoding"]
+  end
+
+  travelUI --> nominatim
+
+  subgraph backend["Zoho Catalyst backend"]
+    api["Serverless Express function\ntrack_everything_te_function"]
+    authRoutes["Identity routes\n/auth/signup · /auth/login · /auth/me · /auth/logout\n/auth/forgot-password · /auth/reset-password"]
+    dataRoutes["Tracking routes\n/add · /listAll · /update · /updateStatus · /delete\n/addDelay · /deleteDelay · /uploadAttachment"]
+    travelRoutes["Travel + score routes\n/travel/list · /score/calculate · /score/history"]
+    mail["Catalyst Mail\nReset-code email delivery"]
+
+    api --> authRoutes
+    api --> dataRoutes
+    api --> travelRoutes
+    authRoutes --> mail
+  end
+
+  hooks -->|HTTP + X-TE-Token| api
+  travelUI -->|HTTP + X-TE-Token| api
+  authUI -->|HTTP| api
+
+  subgraph storage["Catalyst data + files"]
+    datastore["Catalyst DataStore\nTeUsers · TeMain · TeTaskDelay"]
+    stratus["Catalyst Stratus\nDelay attachments / uploaded files"]
+  end
+
+  api --> datastore
+  dataRoutes --> stratus
+
+  subgraph delivery["Delivery"]
+    eas["Expo EAS\nBuild + OTA Update"]
+    catalystDeploy["Catalyst deploy\nFunction release"]
+  end
+
+  eas -. publishes app updates .-> mobile
+  catalystDeploy -. publishes backend .-> api

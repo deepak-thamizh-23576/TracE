@@ -10,8 +10,10 @@ import { useCallback, useEffect, useState } from "react";
 
 // ──────────── API base URL (mirrors useBackend.ts) ────────────
 
-const DEPLOYED_BASE =
+const PROD_BASE =
   "https://trackeverythingte-904503171.catalystserverless.com/server/track_everything_te_function";
+const DEV_BASE =
+  "https://trackeverythingte-904503171.development.catalystserverless.com/server/track_everything_te_function";
 
 const LOCAL_PORT = process.env.EXPO_PUBLIC_LOCAL_PORT ?? "3000";
 
@@ -32,8 +34,13 @@ function getLocalBase(): string {
   return `http://localhost:${LOCAL_PORT}/server/track_everything_te_function`;
 }
 
-const USE_LOCAL = __DEV__;
-const API_BASE = USE_LOCAL ? getLocalBase() : DEPLOYED_BASE;
+// Web dev → local catalyst serve
+// Mobile dev → Development Catalyst environment
+// Production build → Production Catalyst environment
+import { Platform } from "react-native";
+const API_BASE = __DEV__
+  ? (Platform.OS === "web" ? getLocalBase() : DEV_BASE)
+  : PROD_BASE;
 
 // ──────────── Types ────────────
 

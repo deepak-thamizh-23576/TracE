@@ -69,6 +69,37 @@ export interface Goal {
   delays: DelayEntry[];
 }
 
+// ──────────── TRAVEL ────────────
+
+export interface TravelPlace {
+  id: string;
+  title: string;       // Place name (e.g., "Anna Nagar, Chennai")
+  address: string;     // Full formatted address from Nominatim
+  latitude: number;
+  longitude: number;
+  visitDate: string;   // YYYY-MM-DD
+  status: "visited" | "to-visit" | "trip";
+}
+
+export interface TripWaypoint {
+  t: string;   // time label e.g. "10:32 AM"
+  lat: number;
+  lng: number;
+  p: string;   // place name
+}
+
+export interface TripRecord {
+  id: string;
+  date: string;          // YYYY-MM-DD
+  startTime: number;     // epoch ms
+  endTime: number;       // epoch ms
+  durationMs: number;
+  distanceKm: number;
+  waypoints: TripWaypoint[];
+}
+
+// ──────────── HELPERS ────────────
+
 // Helper to get today's date as YYYY-MM-DD
 function toDateKey(date: Date): string {
   const y = date.getFullYear();

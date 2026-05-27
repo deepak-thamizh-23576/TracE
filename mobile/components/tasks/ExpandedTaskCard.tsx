@@ -16,6 +16,7 @@ import {
     View,
 } from "react-native";
 import PriorityDot from "./PriorityDot";
+import LinkText from "./LinkText";
 
 interface ExpandedTaskCardProps {
   task: Task;
@@ -622,9 +623,7 @@ export default function ExpandedTaskCard({
                           onPress={() => handleStartEdit(delay)}
                           activeOpacity={0.6}
                         >
-                          <Text style={styles.delayReasonText}>
-                            {delay.reason}
-                          </Text>
+                          <LinkText text={delay.reason} style={styles.delayReasonText} />
                         </TouchableOpacity>
                       </View>
                       {/* Three-dot menu — pinned to top-right */}

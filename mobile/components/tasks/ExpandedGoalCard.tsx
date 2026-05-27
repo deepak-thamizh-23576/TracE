@@ -2,6 +2,7 @@ import { AppColors } from "@/constants/colors";
 import { DelayEntry, Goal } from "@/constants/tasks";
 import { Entypo, Ionicons, MaterialIcons } from "@expo/vector-icons";
 import React, { useRef, useState } from "react";
+import LinkText from "./LinkText";
 import {
   ActivityIndicator,
   Alert,
@@ -366,9 +367,7 @@ export default function ExpandedGoalCard({
                           </View>
                         )}
                         <View style={styles.delayReasonContainer}>
-                          <Text style={styles.delayReasonText}>
-                            {delay.reason}
-                          </Text>
+                          <LinkText text={delay.reason} style={styles.delayReasonText} />
                         </View>
                         <TouchableOpacity
                           style={styles.delayDeleteButton}

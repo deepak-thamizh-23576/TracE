@@ -4,6 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import React, { useState } from "react";
 import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import PriorityDot from "./PriorityDot";
+import LinkText from "./LinkText";
 
 interface CompletedTaskCardProps {
   task: Task;
@@ -76,9 +77,7 @@ export default function CompletedTaskCard({ task, onUncomplete }: CompletedTaskC
                       </View>
                     )}
                     <View style={styles.delayReasonContainer}>
-                      <Text style={styles.delayReasonText}>
-                        {delay.reason}
-                      </Text>
+                      <LinkText text={delay.reason} style={styles.delayReasonText} />
                     </View>
                   </View>
                 </View>

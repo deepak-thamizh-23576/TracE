@@ -40,6 +40,7 @@ llms-full.txt
 
 # Private / non-app files
 tweet/
+content/
 ws-relay/
 .catalystrc
 .build/

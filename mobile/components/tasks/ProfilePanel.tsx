@@ -21,6 +21,7 @@ interface ProfilePanelProps {
   email: string;
   onClose: () => void;
   onLogout: () => void;
+  onOpenTravel?: () => void;
 }
 
 export default function ProfilePanel({
@@ -30,6 +31,7 @@ export default function ProfilePanel({
   email,
   onClose,
   onLogout,
+  onOpenTravel,
 }: ProfilePanelProps) {
   const slideAnim = useRef(new Animated.Value(-SCREEN_HEIGHT)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -131,6 +133,16 @@ export default function ProfilePanel({
             <MaterialIcons name="email" size={14} color={AppColors.textSecondary} />
             <Text style={styles.email}>{email}</Text>
           </View>
+
+          {/* My Travels button */}
+          <TouchableOpacity
+            style={styles.travelsButton}
+            onPress={() => { onClose(); onOpenTravel?.(); }}
+            activeOpacity={0.8}
+          >
+            <MaterialIcons name="map" size={18} color={AppColors.textPrimary} />
+            <Text style={styles.travelsText}>My Travels</Text>
+          </TouchableOpacity>
 
           {/* Divider */}
           <View style={styles.divider} />
@@ -264,5 +276,24 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     backgroundColor: AppColors.gray200,
     marginTop: 20,
+  },
+  travelsButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: 16,
+    backgroundColor: AppColors.gray100,
+    borderWidth: 1,
+    borderColor: AppColors.gray200,
+    width: "100%",
+    justifyContent: "center",
+    marginBottom: 12,
+  },
+  travelsText: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: AppColors.textPrimary,
   },
 });

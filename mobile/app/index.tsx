@@ -24,7 +24,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useBackend } from "@/hooks/useBackend";
 import { useNotifications } from "@/hooks/useNotifications";
 import { useScore } from "@/hooks/useScore";
-import { Redirect } from "expo-router";
+import { Redirect, router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import type { Href } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -985,6 +985,7 @@ export default function Home() {
         email={user?.email ?? ""}
         onClose={() => setProfileVisible(false)}
         onLogout={logout}
+        onOpenTravel={() => router.push("/travel")}
       />
       <SearchOverlay
         visible={searchVisible}

@@ -61,66 +61,65 @@ export default function ReminderList({
         ) : undefined
       }
     >
-      {sourceItems.length === 0 ? (
-        <View style={styles.emptyState}>
-          <Ionicons name="notifications-off-outline" size={40} color={AppColors.gray300} />
-          <Text style={styles.emptyTitle}>No reminders</Text>
-          <Text style={styles.emptySubtitle}>
-            {showAll ? "No reminders at all" : "None for this date — tap the badge to see all"}
+      {/* Upcoming section — header always visible so toggle is always accessible */}
+      <View style={styles.section}>
+        <TouchableOpacity
+          style={styles.sectionTitleRow}
+          onPress={() => setShowAll((v) => !v)}
+          activeOpacity={0.6}
+        >
+          <Text style={styles.sectionTitle}>
+            {showAll ? `All Upcoming (${active.length})` : `Upcoming · ${active.length}`}
           </Text>
+          <View style={[styles.badge, showAll && styles.badgeActive]}>
+            <Text style={[styles.badgeText, showAll && styles.badgeTextActive]}>
+              {showAll ? "Date view" : `${totalCount} total`}
+            </Text>
+          </View>
+        </TouchableOpacity>
+
+        {active.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Ionicons name="notifications-off-outline" size={40} color={AppColors.gray300} />
+            <Text style={styles.emptyTitle}>No reminders</Text>
+            <Text style={styles.emptySubtitle}>
+              {showAll ? "No reminders at all" : "None for this date"}
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.cardList}>
+            {active.map((item) => (
+              <ReminderCard
+                key={item.id}
+                item={item}
+                onComplete={onComplete}
+                onDelete={onDelete}
+                onSnooze={onSnooze}
+              />
+            ))}
+          </View>
+        )}
+      </View>
+
+      {completed.length > 0 && (
+        <View style={styles.section}>
+          <View style={styles.sectionTitleRow}>
+            <Text style={styles.sectionTitle}>
+              Done · {completed.length}
+            </Text>
+          </View>
+          <View style={styles.cardList}>
+            {completed.map((item) => (
+              <ReminderCard
+                key={item.id}
+                item={item}
+                onComplete={onComplete}
+                onDelete={onDelete}
+                onSnooze={onSnooze}
+              />
+            ))}
+          </View>
         </View>
-      ) : (
-        <>
-          {active.length > 0 && (
-            <View style={styles.section}>
-              <TouchableOpacity
-                style={styles.sectionTitleRow}
-                onPress={() => setShowAll((v) => !v)}
-                activeOpacity={0.6}
-              >
-                <Text style={styles.sectionTitle}>
-                  {showAll ? `All Upcoming (${active.length})` : `Upcoming · ${active.length}`}
-                </Text>
-                <View style={[styles.badge, showAll && styles.badgeActive]}>
-                  <Text style={[styles.badgeText, showAll && styles.badgeTextActive]}>
-                    {showAll ? "Date view" : `${totalCount} total`}
-                  </Text>
-                </View>
-              </TouchableOpacity>
-              <View style={styles.cardList}>
-                {active.map((item) => (
-                  <ReminderCard
-                    key={item.id}
-                    item={item}
-                    onComplete={onComplete}
-                    onDelete={onDelete}
-                    onSnooze={onSnooze}
-                  />
-                ))}
-              </View>
-            </View>
-          )}
-          {completed.length > 0 && (
-            <View style={styles.section}>
-              <View style={styles.sectionTitleRow}>
-                <Text style={styles.sectionTitle}>
-                  Done · {completed.length}
-                </Text>
-              </View>
-              <View style={styles.cardList}>
-                {completed.map((item) => (
-                  <ReminderCard
-                    key={item.id}
-                    item={item}
-                    onComplete={onComplete}
-                    onDelete={onDelete}
-                    onSnooze={onSnooze}
-                  />
-                ))}
-              </View>
-            </View>
-          )}
-        </>
       )}
     </ScrollView>
   );
