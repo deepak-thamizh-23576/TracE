@@ -6,7 +6,7 @@ import {
   RecurrenceType,
 } from "@/constants/tasks";
 import { Entypo, Feather, Ionicons } from "@expo/vector-icons";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import {
   Animated,
   Keyboard,
@@ -64,7 +64,11 @@ const LOCAL_DATE_TIME_REGEX =
 function getDaysInMonth(year: number, month: number) {
   return new Date(year, month + 1, 0).getDate();
 }
-export default function BottomInputBar({
+export interface BottomInputBarHandle {
+  focus: () => void;
+}
+
+const BottomInputBar = React.forwardRef<BottomInputBarHandle, BottomInputBarProps>(function BottomInputBar({
   value,
   onChangeText,
   onSubmit,
@@ -82,11 +86,21 @@ export default function BottomInputBar({
   onRecurrenceChange,
   reminderDateTime = "",
   onReminderDateTimeChange,
-}: BottomInputBarProps) {
+}, ref) {
   const isFocusedRef = useRef(false);
   const bottomOffset = useRef(new Animated.Value(0)).current;
   const inputRef = useRef<TextInput>(null);
   const insets = useSafeAreaInsets();
+
+  useImperativeHandle(ref, () => ({
+    focus: () => inputRef.current?.focus(),
+  }));
+
+  const handleSubmit = useCallback(() => {
+    onSubmit?.();
+    // Refocus after parent clears the input value
+    setTimeout(() => inputRef.current?.focus(), 50);
+  }, [onSubmit]);
 
   // Live NLP parse — recomputed from the current input value
   const parsedReminder = showReminder ? parseNaturalReminder(value) : null;
@@ -232,7 +246,7 @@ export default function BottomInputBar({
             value={value}
             onChangeText={onChangeText}
             returnKeyType="send"
-            onSubmitEditing={onSubmit}
+            onSubmitEditing={handleSubmit}
             blurOnSubmit={false}
             onFocus={() => { isFocusedRef.current = true; }}
             onBlur={() => { isFocusedRef.current = false; }}
@@ -240,7 +254,7 @@ export default function BottomInputBar({
 
           <TouchableOpacity
             style={[styles.iconButton, styles.submitButton]}
-            onPress={onSubmit}
+            onPress={handleSubmit}
             activeOpacity={0.7}
           >
             <Text style={styles.submitIcon}>↑</Text>
@@ -250,7 +264,9 @@ export default function BottomInputBar({
 
     </Animated.View>
   );
-}
+});
+
+export default BottomInputBar;
 
 const styles = StyleSheet.create({
   wrapper: {

@@ -45,3 +45,10 @@ ws-relay/
 .catalystrc
 .build/
 TracE-*.apk
+
+# Cloned reference repos
+agent-skills/
+
+# Web build outputs (inside function and mobile public dirs)
+functions/track_everything_te_function/public/
+mobile/public/

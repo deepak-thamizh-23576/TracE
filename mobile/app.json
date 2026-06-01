@@ -2,7 +2,7 @@
   "expo": {
     "name": "TracE",
     "slug": "trackeverythingmobile",
-    "version": "1.2.0",
+    "version": "1.2.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "trackeverythingmobile",
@@ -71,7 +71,8 @@
           "locationWhenInUsePermission": "TracE needs location access to show your position on the map and track trips.",
           "locationAlwaysAndWhenInUsePermission": "TracE needs location access to show your position on the map and track trips."
         }
-      ]
+      ],
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true,

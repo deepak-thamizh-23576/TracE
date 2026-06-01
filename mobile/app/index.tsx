@@ -1,4 +1,4 @@
-import BottomInputBar from "@/components/tasks/BottomInputBar";
+import BottomInputBar, { BottomInputBarHandle } from "@/components/tasks/BottomInputBar";
 import CalendarDropdown from "@/components/tasks/CalendarDropdown";
 import ReminderList from "@/components/tasks/ReminderList";
 import FoodList from "@/components/tasks/FoodList";
@@ -61,6 +61,13 @@ export default function Home() {
   // ────────── All hooks MUST be called before any conditional return ──────────
   const [activeTab, setActiveTab] = useState<TabName>("Task");
   const [inputText, setInputText] = useState("");
+  const inputBarRef = useRef<BottomInputBarHandle>(null);
+
+  // Auto-focus input when switching tabs
+  useEffect(() => {
+    const t = setTimeout(() => inputBarRef.current?.focus(), 100);
+    return () => clearTimeout(t);
+  }, [activeTab]);
   const [calendarVisible, setCalendarVisible] = useState(false);
   const [profileVisible, setProfileVisible] = useState(false);
   const [searchVisible, setSearchVisible] = useState(false);
@@ -950,6 +957,7 @@ export default function Home() {
       />
       {renderActiveList()}
       <BottomInputBar
+        ref={inputBarRef}
         value={inputText}
         onChangeText={setInputText}
         onSubmit={handleSubmit}

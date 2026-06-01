@@ -12,23 +12,21 @@ app.use(express.json());
 const upload = multer({ dest: "/tmp/te-uploads/" });
 
 // ──────────── CORS ────────────
+// In production, the Catalyst gateway injects CORS headers via console → Authentication → Whitelisting.
+// Express must NOT set CORS headers for production origins — doing so causes duplicate header errors.
+// For local dev (catalyst serve), the gateway is absent, so we set headers manually for localhost only.
 
-app.use(cors({
-  origin: function (origin, callback) {
-    // Allow requests with no origin (mobile apps, curl, server-to-server)
-    if (!origin) return callback(null, true);
-    // Allow any localhost origin (any port) for local dev
-    if (/^http:\/\/localhost(:\d+)?$/.test(origin)) return callback(null, true);
-    const allowed = [
-      "https://trackeverythingte-904503171.development.catalystserverless.com",
-      "https://trackeverythingte-904503171.catalystserverless.com",
-    ];
-    if (allowed.includes(origin)) return callback(null, true);
-    callback(new Error(`CORS blocked: ${origin}`));
-  },
-  methods: ["GET", "POST"],
-  allowedHeaders: ["Content-Type", "Authorization", "X-TE-Token"]
-}));
+app.use((req, res, next) => {
+  const origin = req.headers.origin || "";
+  if (/^http:\/\/localhost(:\d+)?$/.test(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-TE-Token");
+    if (req.method === "OPTIONS") return res.status(204).end();
+  }
+  next();
+});
 
 // ──────────── AUTH HELPERS ────────────
 
@@ -61,13 +59,22 @@ async function authMiddleware(req, res, next) {
   try {
     const catalystApp = catalyst.initialize(req);
     const zcql = catalystApp.zcql();
-    const rows = await zcql.executeZCQLQuery(
-      `SELECT ROWID, email, firstName, lastName FROM TeUsers WHERE sessionToken='${token}'`
+    const sessionRows = await zcql.executeZCQLQuery(
+      `SELECT ROWID, userId FROM TeSessions WHERE sessionToken='${token}'`
     );
-    if (!rows || rows.length === 0) {
+    if (!sessionRows || sessionRows.length === 0) {
       return res.status(401).json({ error: "Invalid or expired token" });
     }
-    const user = rows[0].TeUsers;
+    const session = sessionRows[0].TeSessions;
+    req.sessionRowId = session.ROWID;
+
+    const userRows = await zcql.executeZCQLQuery(
+      `SELECT ROWID, email, firstName, lastName FROM TeUsers WHERE ROWID='${session.userId}'`
+    );
+    if (!userRows || userRows.length === 0) {
+      return res.status(401).json({ error: "User not found" });
+    }
+    const user = userRows[0].TeUsers;
     req.userId = user.ROWID;
     req.userEmail = user.email;
     req.userFirstName = user.firstName;
@@ -111,8 +118,11 @@ app.post("/auth/signup", async (req, res) => {
       lastName: lastName || "",
       passwordHash: hash,
       passwordSalt: salt,
-      sessionToken,
     });
+
+    // Store session separately so web + mobile can be logged in simultaneously
+    const sessionsTable = catalystApp.datastore().table("TeSessions");
+    await sessionsTable.insertRow({ userId: row.ROWID, sessionToken });
 
     res.json({
       success: true,
@@ -152,11 +162,10 @@ app.post("/auth/login", async (req, res) => {
       return res.status(401).json({ error: "Invalid email or password" });
     }
 
-    // Generate a fresh session token on each login
+    // Generate a fresh session token and store it (web + mobile can be active simultaneously)
     const sessionToken = generateToken();
-    await zcql.executeZCQLQuery(
-      `UPDATE TeUsers SET sessionToken='${sessionToken}' WHERE ROWID='${user.ROWID}'`
-    );
+    const sessionsTable = catalystApp.datastore().table("TeSessions");
+    await sessionsTable.insertRow({ userId: user.ROWID, sessionToken });
 
     res.json({
       success: true,
@@ -190,9 +199,8 @@ app.post("/auth/logout", authMiddleware, async (req, res) => {
   try {
     const catalystApp = catalyst.initialize(req);
     const zcql = catalystApp.zcql();
-    await zcql.executeZCQLQuery(
-      `UPDATE TeUsers SET sessionToken='' WHERE ROWID='${req.userId}'`
-    );
+    const sessionsTable = catalystApp.datastore().table("TeSessions");
+    await sessionsTable.deleteRow(req.sessionRowId);
     res.json({ success: true });
   } catch (err) {
     console.error("Logout error:", err);
@@ -278,9 +286,8 @@ app.post("/auth/reset-password", async (req, res) => {
     }
 
     const { salt, hash } = hashPassword(newPassword);
-    const newSessionToken = generateToken();
     await zcql.executeZCQLQuery(
-      `UPDATE TeUsers SET passwordHash='${hash}', passwordSalt='${salt}', sessionToken='${newSessionToken}', resetToken='', resetTokenExpiry='' WHERE ROWID='${user.ROWID}'`
+      `UPDATE TeUsers SET passwordHash='${hash}', passwordSalt='${salt}', resetToken='', resetTokenExpiry='' WHERE ROWID='${user.ROWID}'`
     );
 
     res.json({ success: true });

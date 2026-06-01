@@ -5,5 +5,11 @@
     ],
     "ignore": [],
     "source": "functions"
-  }
+  },
+  "slate": [
+    {
+      "name": "trace-web",
+      "source": "/Users/deepak-23576/Documents/Track Everything/TE-codeBase/mobile/dist"
+    }
+  ]
 }

@@ -22,6 +22,7 @@ import { router } from "expo-router";
 import { MaterialIcons } from "@expo/vector-icons";
 import Constants from "expo-constants";
 
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "@/contexts/AuthContext";
 import { AppColors } from "@/constants/colors";
 import { TravelPlace, TripRecord, TripWaypoint } from "@/constants/tasks";
@@ -29,6 +30,8 @@ import { TRAVEL_MAP_HTML } from "@/constants/travelMapHtml";
 import PlaceSearch from "@/components/tasks/PlaceSearch";
 import type { NominatimResult } from "@/components/tasks/PlaceSearch";
 import * as Location from "expo-location";
+
+const PENDING_TRIP_KEY = "te_pending_trip";
 
 // ──────────── API base ────────────
 
@@ -265,6 +268,19 @@ const tripRowStyles = StyleSheet.create({
   },
 });
 
+// ──────────── Trip detection helper ────────────
+// The Catalyst DataStore may not preserve the "trip" status value, causing it
+// to fall back to "visited". Detect trips by content shape as a reliable fallback.
+function isTrip(place: TravelPlace): boolean {
+  if (place.status === "trip") return true;
+  try {
+    const d = JSON.parse(place.title);
+    return typeof d.startTime === "number" && typeof d.endTime === "number";
+  } catch {
+    return false;
+  }
+}
+
 // ──────────── Screen ────────────
 
 export default function TravelScreen() {
@@ -418,6 +434,10 @@ export default function TravelScreen() {
       distanceKm,
       waypoints,
     };
+
+    // Persist immediately so a network failure or app kill can't erase the trip
+    AsyncStorage.setItem(PENDING_TRIP_KEY, JSON.stringify(record)).catch(() => {});
+
     setTripSummary(record);
   }, []);
 
@@ -460,12 +480,21 @@ export default function TravelScreen() {
           const wJson = JSON.stringify(record.waypoints).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
           webViewRef.current.injectJavaScript(`window.addSavedTrip('${newPlace.id}','${wJson}'); true;`);
         }
+        // Clear the persisted pending trip only after a confirmed save
+        AsyncStorage.removeItem(PENDING_TRIP_KEY).catch(() => {});
+        setSavingTrip(false);
+        setTripSummary(null);
+      } else {
+        // Non-2xx from server — keep modal open so user can retry
+        setSavingTrip(false);
+        Alert.alert("Save failed", "Couldn't save your trip. Check your connection and tap Save again.");
       }
     } catch (err) {
+      // Network error (e.g. mid-flight network switch) — keep modal open so user can retry
       console.warn("[travel] save trip error:", err);
+      setSavingTrip(false);
+      Alert.alert("Network error", "Couldn't reach the server. Your trip data is safe — tap Save again when connected.");
     }
-    setSavingTrip(false);
-    setTripSummary(null);
   }, [token]);
 
   // Live location
@@ -532,7 +561,7 @@ export default function TravelScreen() {
       if (!webViewRef.current) return;
       let js = "window.clearMarkers();";
       for (const p of list) {
-        if (p.status === "trip") {
+        if (isTrip(p)) {
           // Parse saved trip and draw its route
           try {
             const data = JSON.parse(p.title);
@@ -550,7 +579,7 @@ export default function TravelScreen() {
           js += `window.addMarker('${p.id}',${p.latitude},${p.longitude},'${t}','${p.visitDate}');`;
         }
       }
-      const nonTripCount = list.filter((p) => p.status !== "trip" && p.latitude !== 0).length;
+      const nonTripCount = list.filter((p) => !isTrip(p) && p.latitude !== 0).length;
       if (nonTripCount > 0) js += "window.fitToMarkers();";
       webViewRef.current.injectJavaScript(js + " true;");
     },
@@ -582,6 +611,41 @@ export default function TravelScreen() {
   useEffect(() => {
     loadPlaces();
   }, [loadPlaces]);
+
+  // Recover any unsaved trip that was interrupted by a network failure or app kill
+  useEffect(() => {
+    AsyncStorage.getItem(PENDING_TRIP_KEY)
+      .then((raw) => {
+        if (!raw) return;
+        try {
+          const record: TripRecord = JSON.parse(raw);
+          // Only recover trips from the last 24 hours
+          if (Date.now() - record.endTime < 24 * 60 * 60 * 1000) {
+            Alert.alert(
+              "Unsaved trip found",
+              "A trip that wasn't saved was found. Would you like to save it now?",
+              [
+                {
+                  text: "Discard",
+                  style: "destructive",
+                  onPress: () => AsyncStorage.removeItem(PENDING_TRIP_KEY).catch(() => {}),
+                },
+                {
+                  text: "Save",
+                  onPress: () => setTripSummary(record),
+                },
+              ]
+            );
+          } else {
+            // Too old — silently discard
+            AsyncStorage.removeItem(PENDING_TRIP_KEY).catch(() => {});
+          }
+        } catch {
+          AsyncStorage.removeItem(PENDING_TRIP_KEY).catch(() => {});
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // Once BOTH the map is ready AND places are loaded, inject all markers
   useEffect(() => {
@@ -922,7 +986,7 @@ export default function TravelScreen() {
           >
             {/* ── Visited section ── */}
             {(() => {
-              const visited = places.filter((p) => !p.status || p.status === "visited");
+              const visited = places.filter((p) => !isTrip(p) && (!p.status || p.status === "visited"));
               const filtered = [...visited]
                 .sort((a, b) => b.visitDate.localeCompare(a.visitDate))
                 .filter((p) =>
@@ -1088,7 +1152,7 @@ export default function TravelScreen() {
 
             {/* ── Trips section ── */}
             {(() => {
-              const trips = places.filter((p) => p.status === "trip");
+              const trips = places.filter((p) => isTrip(p));
               return (
                 <>
                   <View style={[styles.sectionHeader, { marginTop: 20 }]}>
