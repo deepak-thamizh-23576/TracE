@@ -32,7 +32,7 @@
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/icon.png"
+      "favicon": "./assets/images/tracE-logo.png"
     },
     "plugins": [
       "expo-router",

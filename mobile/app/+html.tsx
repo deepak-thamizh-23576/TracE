@@ -12,6 +12,8 @@ export default function Root({ children }: PropsWithChildren) {
           content="width=device-width, initial-scale=1, shrink-to-fit=no"
         />
         <title>TracE</title>
+        {/* Set title immediately (before React hydrates) and re-assert after */}
+        <script dangerouslySetInnerHTML={{ __html: `document.title='TracE'` }} />
         <link
           rel="icon"
           type="image/x-icon"
