@@ -99,8 +99,17 @@ const AuthContext = createContext<AuthContextType>({
 
 const TOKEN_KEY = "te_session_token";
 
+// On web, localStorage is synchronous — check immediately so isLoading
+// starts as false when there's no token (no spinner, no async wait).
+function getInitialLoadingState(): boolean {
+  if (Platform.OS === "web" && typeof localStorage !== "undefined") {
+    return !!localStorage.getItem(TOKEN_KEY);
+  }
+  return true; // native: always do async SecureStore check
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(getInitialLoadingState);
   const [user, setUser] = useState<AuthUser | null>(null);
   const [token, setToken] = useState<string | null>(null);
 
