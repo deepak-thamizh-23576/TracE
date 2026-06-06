@@ -102,15 +102,17 @@ const USER_KEY  = "te_cached_user";
 
 // On web, read token + cached user synchronously from localStorage so the
 // very first render already has auth state — zero spinner, zero network wait.
+// typeof window guard ensures this is skipped during static export (SSR),
+// which prevents React hydration mismatch error #418.
 function getInitialState(): { token: string | null; user: AuthUser | null; loading: boolean } {
-  if (Platform.OS === "web" && typeof localStorage !== "undefined") {
+  if (Platform.OS === "web" && typeof window !== "undefined" && typeof localStorage !== "undefined") {
     const token = localStorage.getItem(TOKEN_KEY);
     const userRaw = localStorage.getItem(USER_KEY);
     let user: AuthUser | null = null;
     try { if (userRaw) user = JSON.parse(userRaw); } catch {}
     return { token, user, loading: false };
   }
-  return { token: null, user: null, loading: true }; // native: async SecureStore
+  return { token: null, user: null, loading: true }; // native or SSR: async check
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
