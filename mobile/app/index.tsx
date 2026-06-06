@@ -25,6 +25,7 @@ import { useBackend } from "@/hooks/useBackend";
 import { useNotifications } from "@/hooks/useNotifications";
 import { useScore } from "@/hooks/useScore";
 import { Redirect, router } from "expo-router";
+import Head from "expo-router/head";
 import { StatusBar } from "expo-status-bar";
 import type { Href } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -943,6 +944,7 @@ export default function Home() {
 
   return (
     <View style={styles.container}>
+      <Head><title>TracE</title></Head>
       <StatusBar style="dark" />
       <Header
         activeTab={activeTab}
