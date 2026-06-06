@@ -109,9 +109,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     (async () => {
       try {
         const storedToken = await storage.getItem(TOKEN_KEY);
-        if (storedToken) {
+        if (!storedToken) {
+          // No token stored — skip network call, go straight to login
+          setIsLoading(false);
+          return;
+        }
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 8000);
+        try {
           const res = await fetch(`${API_BASE}/auth/me`, {
             headers: { "X-TE-Token": storedToken },
+            signal: controller.signal,
           });
           if (res.ok) {
             const data = await res.json();
@@ -121,6 +129,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             // Token expired or invalid – clear it
             await storage.deleteItem(TOKEN_KEY);
           }
+        } finally {
+          clearTimeout(timeout);
         }
       } catch (err) {
         console.warn("[auth] Token validation error:", err);
