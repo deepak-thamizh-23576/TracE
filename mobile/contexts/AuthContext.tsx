@@ -98,33 +98,45 @@ const AuthContext = createContext<AuthContextType>({
 });
 
 const TOKEN_KEY = "te_session_token";
+const USER_KEY  = "te_cached_user";
 
-// On web, localStorage is synchronous — check immediately so isLoading
-// starts as false when there's no token (no spinner, no async wait).
-function getInitialLoadingState(): boolean {
+// On web, read token + cached user synchronously from localStorage so the
+// very first render already has auth state — zero spinner, zero network wait.
+function getInitialState(): { token: string | null; user: AuthUser | null; loading: boolean } {
   if (Platform.OS === "web" && typeof localStorage !== "undefined") {
-    return !!localStorage.getItem(TOKEN_KEY);
+    const token = localStorage.getItem(TOKEN_KEY);
+    const userRaw = localStorage.getItem(USER_KEY);
+    let user: AuthUser | null = null;
+    try { if (userRaw) user = JSON.parse(userRaw); } catch {}
+    return { token, user, loading: false };
   }
-  return true; // native: always do async SecureStore check
+  return { token: null, user: null, loading: true }; // native: async SecureStore
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [isLoading, setIsLoading] = useState(getInitialLoadingState);
-  const [user, setUser] = useState<AuthUser | null>(null);
-  const [token, setToken] = useState<string | null>(null);
+  const initial = getInitialState();
+  const [isLoading, setIsLoading] = useState(initial.loading);
+  const [user, setUser]   = useState<AuthUser | null>(initial.user);
+  const [token, setToken] = useState<string | null>(initial.token);
 
-  // ── On mount: check for a stored token and validate it ──
+  // ── On mount: silently validate stored token in background ──
+  // Does NOT block rendering — app is already shown using cached state.
   useEffect(() => {
     (async () => {
       try {
         const storedToken = await storage.getItem(TOKEN_KEY);
         if (!storedToken) {
-          // No token stored — skip network call, go straight to login
+          setUser(null);
+          setToken(null);
           setIsLoading(false);
           return;
         }
+        // Native: set token optimistically so app renders while we validate
+        if (Platform.OS !== "web") {
+          setToken(storedToken);
+        }
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 8000);
+        const timeout = setTimeout(() => controller.abort(), 10000);
         try {
           const res = await fetch(`${API_BASE}/auth/me`, {
             headers: { "X-TE-Token": storedToken },
@@ -134,15 +146,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const data = await res.json();
             setUser(data.user);
             setToken(storedToken);
+            // Keep cache fresh
+            if (Platform.OS === "web") localStorage.setItem(USER_KEY, JSON.stringify(data.user));
           } else {
-            // Token expired or invalid – clear it
+            // Token rejected by server — force re-login
             await storage.deleteItem(TOKEN_KEY);
+            if (Platform.OS === "web") localStorage.removeItem(USER_KEY);
+            setUser(null);
+            setToken(null);
           }
         } finally {
           clearTimeout(timeout);
         }
       } catch (err) {
-        console.warn("[auth] Token validation error:", err);
+        // Network error / timeout — keep cached state, don't log out
+        console.warn("[auth] Background token validation failed:", err);
       } finally {
         setIsLoading(false);
       }
@@ -168,6 +186,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return data.error || "Signup failed";
         }
         await storage.setItem(TOKEN_KEY, data.token);
+        if (Platform.OS === "web") localStorage.setItem(USER_KEY, JSON.stringify(data.user));
         setToken(data.token);
         setUser(data.user);
         return null;
@@ -193,6 +212,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return data.error || "Login failed";
         }
         await storage.setItem(TOKEN_KEY, data.token);
+        if (Platform.OS === "web") localStorage.setItem(USER_KEY, JSON.stringify(data.user));
         setToken(data.token);
         setUser(data.user);
         return null;
@@ -215,6 +235,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }).catch(() => {});
       }
       await storage.deleteItem(TOKEN_KEY);
+      if (Platform.OS === "web") localStorage.removeItem(USER_KEY);
     } catch (err) {
       console.warn("[auth] Logout error:", err);
     } finally {
