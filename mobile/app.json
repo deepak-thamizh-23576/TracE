@@ -27,12 +27,16 @@
       "permissions": [
         "android.permission.RECORD_AUDIO",
         "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION"
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_LOCATION"
       ]
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/tracE-logo.png"
+      "favicon": "./assets/images/tracE.png"
     },
     "plugins": [
       "expo-router",
@@ -69,7 +73,8 @@
         "expo-location",
         {
           "locationWhenInUsePermission": "TracE needs location access to show your position on the map and track trips.",
-          "locationAlwaysAndWhenInUsePermission": "TracE needs location access to show your position on the map and track trips."
+          "locationAlwaysAndWhenInUsePermission": "TracE needs location access to show your position on the map and track trips.",
+          "isBackgroundLocationEnabled": true
         }
       ],
       "expo-font"

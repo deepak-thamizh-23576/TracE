@@ -8,6 +8,9 @@ import React, {
 import {
   ActivityIndicator,
   Alert,
+  AppState,
+  BackHandler,
+  KeyboardAvoidingView,
   Platform,
   ScrollView,
   StyleSheet,
@@ -18,7 +21,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import WebView, { WebViewMessageEvent } from "react-native-webview";
-import { router } from "expo-router";
+import { router, Stack } from "expo-router";
 import { MaterialIcons } from "@expo/vector-icons";
 import Constants from "expo-constants";
 
@@ -30,8 +33,40 @@ import { TRAVEL_MAP_HTML } from "@/constants/travelMapHtml";
 import PlaceSearch from "@/components/tasks/PlaceSearch";
 import type { NominatimResult } from "@/components/tasks/PlaceSearch";
 import * as Location from "expo-location";
+import * as Notifications from "expo-notifications";
 
 const PENDING_TRIP_KEY = "te_pending_trip";
+const ACTIVE_TRIP_KEY  = "te_active_trip";  // mid-trip snapshot, saved every waypoint
+const TRIP_NOTIF_ID    = "te-trip-active";  // persistent notification shown during a trip
+
+// ─── Trip notification helper (module-level, no re-render cost) ───────────────
+// Posts or updates the sticky non-clearable trip notification.
+// On Android, `ongoing: true` + `sticky: true` prevents the user from swiping it away.
+async function postTripNotification(elapsedSecs: number, lastPlace: string): Promise<void> {
+  const h = Math.floor(elapsedSecs / 3600);
+  const m = Math.floor((elapsedSecs % 3600) / 60);
+  const s = elapsedSecs % 60;
+  const timeStr = h > 0
+    ? `${h}h ${String(m).padStart(2, "0")}m ${String(s).padStart(2, "0")}s`
+    : `${m}m ${String(s).padStart(2, "0")}s`;
+  try {
+    await Notifications.scheduleNotificationAsync({
+      identifier: TRIP_NOTIF_ID,
+      content: {
+        title: `Trip in progress \u00b7 ${timeStr}`,
+        body: lastPlace ? `\u{1F4CD} ${lastPlace}` : "Tracking your route…",
+        data: {},
+        color: "#00C6B3",
+        sticky: true,       // non-dismissible by swipe (Android isOngoing)
+        autoDismiss: false, // don\'t dismiss on tap
+        priority: Notifications.AndroidNotificationPriority.HIGH,
+      },
+      trigger: null,
+    });
+  } catch {
+    // Notification permission not granted — fail silently
+  }
+}
 
 // ──────────── API base ────────────
 
@@ -295,10 +330,16 @@ export default function TravelScreen() {
   const [adding, setAdding] = useState(false);
   const [showList, setShowList] = useState(false);
   const [listSearch, setListSearch] = useState("");
+  const [activeSection, setActiveSection] = useState<"explored" | "to-explore" | "live-tracking" | null>(null);
 
   // Confirmation card state
   const [pendingPlace, setPendingPlace] = useState<NominatimResult | null>(null);
   const [confirmDate, setConfirmDate] = useState<string>(todayStr());
+  const [confirmNotes, setConfirmNotes] = useState<string>("");
+
+  // Notes editing in list view
+  const [editingNotesId, setEditingNotesId] = useState<string | null>(null);
+  const [editNotesText, setEditNotesText] = useState<string>("");
 
   // Wishlist add-from-list form
   const [wishlistText, setWishlistText] = useState("");
@@ -314,8 +355,26 @@ export default function TravelScreen() {
   const tripStartTimeRef = useRef<number>(0);
   const tripWaypointsRef = useRef<TripWaypoint[]>([]);
   const tripPathRef = useRef<{lat: number; lng: number}[]>([]); // raw GPS points for distance
-  const lastWaypointTimeRef = useRef<number>(0);
+  const lastWaypointTimeRef    = useRef<number>(0);
+  const backgroundStartTimeRef  = useRef<number>(0); // tracks when app went to background
+  const tripNotifTimerRef       = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastWaypointNameRef     = useRef<string>("");  // last reverse-geocoded place for notification
   const WAYPOINT_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+
+  // Set up Android notification channel for the persistent trip notification
+  useEffect(() => {
+    if (Platform.OS !== "android") return;
+    Notifications.setNotificationChannelAsync("trip", {
+      name: "Active Trip",
+      importance: Notifications.AndroidImportance.HIGH,
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+      vibrationPattern: null,
+      enableVibrate: false,
+      showBadge: false,
+    }).catch(() => {});
+    // Request notification permission (Android 13+ requires explicit grant)
+    Notifications.requestPermissionsAsync().catch(() => {});
+  }, []);
 
   // Live elapsed timer
   useEffect(() => {
@@ -390,7 +449,25 @@ export default function TravelScreen() {
     setTripElapsed(0);
     setTripActive(true);
 
-    // Start the route on the map immediately — no waiting for GPS
+    // Clear any leftover mid-trip snapshot, then request background location
+    AsyncStorage.removeItem(ACTIVE_TRIP_KEY).catch(() => {});
+    if (Platform.OS !== "web") {
+      // On Android 11+: must request foreground first (done at mount), then background
+      // On iOS: triggers the "Always Allow" prompt if not yet granted
+      Location.requestBackgroundPermissionsAsync().catch(() => {});
+    }
+
+    // ── Start persistent trip notification ──
+    if (Platform.OS === "android") {
+      lastWaypointNameRef.current = "";
+      // Post an initial notification immediately (elapsed = 0)
+      postTripNotification(0, "");
+      // Update every second — replaces the notification in-place via the same identifier
+      tripNotifTimerRef.current = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - tripStartTimeRef.current) / 1000);
+        postTripNotification(elapsed, lastWaypointNameRef.current);
+      }, 1000);
+    }
     webViewRef.current?.injectJavaScript(`window.startTrip(); true;`);
 
     // Capture starting location in background (doesn't block the UI)
@@ -403,6 +480,7 @@ export default function TravelScreen() {
           const wp: TripWaypoint = { t: fmtTime(), lat: latitude, lng: longitude, p: place };
           tripWaypointsRef.current.push(wp);
           lastWaypointTimeRef.current = Date.now();
+          lastWaypointNameRef.current = place; // feed starting location into the notification
           const lbl = place.replace(/'/g, "\\'");
           webViewRef.current?.injectJavaScript(
             `window.updateTrip(${latitude},${longitude});
@@ -417,6 +495,16 @@ export default function TravelScreen() {
   const handleEndTrip = useCallback(async () => {
     tripActiveRef.current = false;
     setTripActive(false);
+
+    // Stop the notification update timer and dismiss the notification
+    if (tripNotifTimerRef.current !== null) {
+      clearInterval(tripNotifTimerRef.current);
+      tripNotifTimerRef.current = null;
+    }
+    Notifications.dismissNotificationAsync(TRIP_NOTIF_ID).catch(() => {});
+
+    // Clear the mid-trip snapshot — we're building a final record now
+    AsyncStorage.removeItem(ACTIVE_TRIP_KEY).catch(() => {});
 
     const endTime = Date.now();
     const durationMs = endTime - tripStartTimeRef.current;
@@ -482,6 +570,7 @@ export default function TravelScreen() {
         }
         // Clear the persisted pending trip only after a confirmed save
         AsyncStorage.removeItem(PENDING_TRIP_KEY).catch(() => {});
+        AsyncStorage.removeItem(ACTIVE_TRIP_KEY).catch(() => {});
         setSavingTrip(false);
         setTripSummary(null);
       } else {
@@ -509,7 +598,7 @@ export default function TravelScreen() {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== "granted" || !active) return;
         locationSubRef.current = await Location.watchPositionAsync(
-          { accuracy: Location.Accuracy.High, distanceInterval: 10 },
+          { accuracy: Location.Accuracy.High, distanceInterval: 10, timeInterval: 15000 },
           (loc) => {
             // Sync part — always safe
             const { latitude, longitude } = loc.coords;
@@ -535,6 +624,16 @@ export default function TravelScreen() {
                   const timeLabel = fmtTime();
                   const wp: TripWaypoint = { t: timeLabel, lat: captureLat, lng: captureLng, p: place };
                   tripWaypointsRef.current.push(wp);
+                  // Update notification body with latest place name
+                  lastWaypointNameRef.current = place;
+                  // Progressive save — if app is killed mid-trip, this data survives
+                  AsyncStorage.setItem(ACTIVE_TRIP_KEY, JSON.stringify({
+                    id: String(tripStartTimeRef.current),
+                    date: todayStr(),
+                    startTime: tripStartTimeRef.current,
+                    waypoints: tripWaypointsRef.current,
+                    path: tripPathRef.current,
+                  })).catch(() => {});
                   const lbl = place.replace(/'/g, "\\'");
                   webViewRef.current?.injectJavaScript(
                     `window.addTripWaypoint(${captureLat},${captureLng},'${lbl}',false); true;`
@@ -599,7 +698,16 @@ export default function TravelScreen() {
         return;
       }
       const data = await res.json();
-      const list: TravelPlace[] = data.places ?? [];
+      // Parse out notes from title in case backend hasn't been redeployed yet
+      const list: TravelPlace[] = (data.places ?? []).map((p: TravelPlace) => {
+        if (p.title && p.title.includes("|||")) {
+          const sepIdx = p.title.indexOf("|||");
+          const cleanTitle = p.title.slice(0, sepIdx).trim();
+          const parsedNotes = p.title.slice(sepIdx + 3).trim();
+          return { ...p, title: cleanTitle, notes: parsedNotes || p.notes };
+        }
+        return p;
+      });
       setPlaces(list);
       setPlacesLoaded(true);
     } catch (err) {
@@ -612,48 +720,121 @@ export default function TravelScreen() {
     loadPlaces();
   }, [loadPlaces]);
 
-  // Recover any unsaved trip that was interrupted by a network failure or app kill
+  // Recover any unsaved trip (completed but not saved, OR interrupted mid-trip)
   useEffect(() => {
     AsyncStorage.getItem(PENDING_TRIP_KEY)
       .then((raw) => {
-        if (!raw) return;
-        try {
-          const record: TripRecord = JSON.parse(raw);
-          // Only recover trips from the last 24 hours
-          if (Date.now() - record.endTime < 24 * 60 * 60 * 1000) {
-            Alert.alert(
-              "Unsaved trip found",
-              "A trip that wasn't saved was found. Would you like to save it now?",
-              [
-                {
-                  text: "Discard",
-                  style: "destructive",
-                  onPress: () => AsyncStorage.removeItem(PENDING_TRIP_KEY).catch(() => {}),
-                },
-                {
-                  text: "Save",
-                  onPress: () => setTripSummary(record),
-                },
-              ]
-            );
-          } else {
-            // Too old — silently discard
+        if (raw) {
+          try {
+            const record: TripRecord = JSON.parse(raw);
+            if (Date.now() - record.endTime < 24 * 60 * 60 * 1000) {
+              Alert.alert(
+                "Unsaved trip found",
+                "A trip that wasn't saved was found. Would you like to save it now?",
+                [
+                  { text: "Discard", style: "destructive", onPress: () => AsyncStorage.removeItem(PENDING_TRIP_KEY).catch(() => {}) },
+                  { text: "Save", onPress: () => setTripSummary(record) },
+                ]
+              );
+            } else {
+              AsyncStorage.removeItem(PENDING_TRIP_KEY).catch(() => {});
+            }
+          } catch {
             AsyncStorage.removeItem(PENDING_TRIP_KEY).catch(() => {});
           }
-        } catch {
-          AsyncStorage.removeItem(PENDING_TRIP_KEY).catch(() => {});
+          return; // don't also check ACTIVE_TRIP_KEY in the same session
         }
+        // No completed pending trip — check for a mid-trip snapshot (app was killed while recording)
+        AsyncStorage.getItem(ACTIVE_TRIP_KEY)
+          .then((activeRaw) => {
+            if (!activeRaw) return;
+            try {
+              const snap: {
+                id: string; date: string; startTime: number;
+                waypoints: TripWaypoint[];
+                path: { lat: number; lng: number }[];
+              } = JSON.parse(activeRaw);
+              const age = Date.now() - snap.startTime;
+              if (age < 24 * 60 * 60 * 1000 && snap.waypoints?.length > 0) {
+                const startedAt = new Date(snap.startTime)
+                  .toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+                Alert.alert(
+                  "Interrupted trip found",
+                  `A trip started at ${startedAt} was cut short (app was closed or screen locked too long). Save what was recorded?`,
+                  [
+                    { text: "Discard", style: "destructive", onPress: () => AsyncStorage.removeItem(ACTIVE_TRIP_KEY).catch(() => {}) },
+                    {
+                      text: "Save",
+                      onPress: () => {
+                        const record: TripRecord = {
+                          id: snap.id || String(snap.startTime),
+                          date: snap.date || todayStr(),
+                          startTime: snap.startTime,
+                          endTime: snap.startTime + age,
+                          durationMs: age,
+                          distanceKm: parseFloat(calcDistance(snap.path ?? []).toFixed(2)),
+                          waypoints: snap.waypoints,
+                        };
+                        AsyncStorage.removeItem(ACTIVE_TRIP_KEY).catch(() => {});
+                        setTripSummary(record);
+                      },
+                    },
+                  ]
+                );
+              } else {
+                AsyncStorage.removeItem(ACTIVE_TRIP_KEY).catch(() => {});
+              }
+            } catch {
+              AsyncStorage.removeItem(ACTIVE_TRIP_KEY).catch(() => {});
+            }
+          })
+          .catch(() => {});
       })
       .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Once BOTH the map is ready AND places are loaded, inject all markers
+  // Warn user if the app was backgrounded for a while during an active trip
+  // (location tracking pauses on iOS when the screen locks without background permission)
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "background" || nextState === "inactive") {
+        backgroundStartTimeRef.current = Date.now();
+      } else if (nextState === "active" && tripActiveRef.current) {
+        const bgMs = Date.now() - backgroundStartTimeRef.current;
+        if (bgMs > 30_000) {
+          Alert.alert(
+            "Tracking may have paused",
+            "The app was in the background — iOS/Android may have paused location tracking. Some distance or stops in that gap may be missing.",
+            [{ text: "OK" }]
+          );
+        }
+      }
+    });
+    return () => sub.remove();
+  }, []);
+
   useEffect(() => {
     if (mapReady && placesLoaded) {
       injectMarkers(places);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapReady, placesLoaded]);
+
+  // Android hardware back — when list view is open, close it instead of exiting the screen
+  useEffect(() => {
+    if (!showList) return;
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (activeSection) {
+        setActiveSection(null);
+      } else {
+        setShowList(false);
+        setListSearch("");
+      }
+      return true; // consume the event
+    });
+    return () => sub.remove();
+  }, [showList, activeSection]);
 
   // ── WebView message handler ──
   const onMessage = useCallback(
@@ -728,6 +909,8 @@ export default function TravelScreen() {
   const handleConfirmAdd = useCallback(async (status: "visited" | "to-visit") => {
     if (!pendingPlace || !token) return;
     setAdding(true);
+    // Remove preview pin before adding the real marker
+    webViewRef.current?.injectJavaScript(`window.removePreviewPin(); true;`);
 
     const lat = parseFloat(pendingPlace.lat);
     const lng = parseFloat(pendingPlace.lon);
@@ -744,7 +927,7 @@ export default function TravelScreen() {
         body: JSON.stringify({
           itemType: "Travel",
           itemTypeLevel,
-          itemContent: title,
+          itemContent: confirmNotes.trim() ? `${title}|||${confirmNotes.trim()}` : title,
           status,
           createdDate: status === "visited" ? confirmDate : todayStr(),
         }),
@@ -760,6 +943,7 @@ export default function TravelScreen() {
           longitude: lng,
           visitDate: status === "visited" ? confirmDate : "",
           status,
+          notes: confirmNotes.trim() || undefined,
         };
         setPlaces((prev) => [...prev, newPlace]);
 
@@ -782,8 +966,9 @@ export default function TravelScreen() {
     }
 
     setAdding(false);
+    setConfirmNotes("");
     setPendingPlace(null);
-  }, [pendingPlace, token, confirmDate]);
+  }, [pendingPlace, token, confirmDate, confirmNotes]);
 
   // ── Add to wishlist from list view ──
   const handleAddWishlistItem = useCallback(async () => {
@@ -826,11 +1011,37 @@ export default function TravelScreen() {
 
   const handleCancelAdd = useCallback(() => {
     setPendingPlace(null);
+    setConfirmNotes("");
+    setEditingNotesId(null);
+    webViewRef.current?.injectJavaScript(`window.removePreviewPin(); true;`);
   }, []);
+
+  const handleSaveNotes = useCallback(async (place: TravelPlace, newNotes: string) => {
+    const trimmed = newNotes.trim();
+    const newContent = trimmed ? `${place.title}|||${trimmed}` : place.title;
+    setPlaces((prev) => prev.map((p) => p.id === place.id ? { ...p, notes: trimmed || undefined } : p));
+    setEditingNotesId(null);
+    if (token) {
+      fetch(`${API_BASE}/update`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-TE-Token": token },
+        body: JSON.stringify({ id: place.id, itemContent: newContent }),
+      }).catch((err) => console.warn("[travel] notes update error:", err));
+    }
+  }, [token]);
 
   const handlePlaceSelect = useCallback((result: NominatimResult) => {
     setPendingPlace(result);
     setConfirmDate(todayStr());
+    setConfirmNotes("");
+    // Fly the map to the selected place and show a preview pin
+    const lat = parseFloat(result.lat);
+    const lng = parseFloat(result.lon);
+    if (!isNaN(lat) && !isNaN(lng) && webViewRef.current) {
+      webViewRef.current.injectJavaScript(
+        `map.setView([${lat}, ${lng}], 14); window.showPreviewPin(${lat}, ${lng}); true;`
+      );
+    }
   }, []);
 
   const shortTitle = useMemo(() => {
@@ -846,6 +1057,8 @@ export default function TravelScreen() {
 
   return (
     <View style={styles.container}>
+      {/* Disable iOS swipe-back when list view is open so back returns to map, not tasks */}
+      <Stack.Screen options={{ gestureEnabled: !showList }} />
       {/* Map fills the full screen */}
       <MapWebView webViewRef={webViewRef} onMessage={onMessage} />
 
@@ -868,7 +1081,7 @@ export default function TravelScreen() {
           <View style={{ flex: 1 }} />
           <TouchableOpacity
             style={[styles.backBtn, showList && styles.toggleBtnActive]}
-            onPress={() => { setShowList((v) => !v); setPendingPlace(null); }}
+            onPress={() => { setShowList((v) => !v); setPendingPlace(null); setActiveSection(null); }}
             activeOpacity={0.7}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
@@ -955,162 +1168,107 @@ export default function TravelScreen() {
           <View style={styles.listHeader}>
             <TouchableOpacity
               style={styles.backBtn}
-              onPress={() => { setShowList(false); setListSearch(""); }}
+              onPress={() => {
+                if (activeSection) {
+                  setActiveSection(null);
+                } else {
+                  setShowList(false);
+                  setListSearch("");
+                }
+              }}
               activeOpacity={0.7}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
-              <MaterialIcons name="map" size={20} color={AppColors.textPrimary} />
+              <MaterialIcons
+                name={activeSection ? "arrow-back" : "map"}
+                size={20}
+                color={AppColors.textPrimary}
+              />
             </TouchableOpacity>
-            <Text style={styles.listHeaderTitle}>My Travels</Text>
+            <Text style={styles.listHeaderTitle}>
+              {activeSection === "explored"
+                ? "Explored"
+                : activeSection === "to-explore"
+                ? "To Explore"
+                : activeSection === "live-tracking"
+                ? "Live Tracking"
+                : "My Travels"}
+            </Text>
             <View style={{ width: 40 }} />
           </View>
 
-          {/* Search bar */}
-          <View style={styles.listSearchWrap}>
-            <MaterialIcons name="search" size={18} color={AppColors.gray400} />
-            <TextInput
-              style={styles.listSearchInput}
-              placeholder="Search places…"
-              placeholderTextColor={AppColors.gray400}
-              value={listSearch}
-              onChangeText={setListSearch}
-              clearButtonMode="while-editing"
-              autoCorrect={false}
-            />
-          </View>
+          {/* ── Cards view ── */}
+          {!activeSection && (
+            <View style={styles.summaryCardsWrap}>
+              <View style={styles.summaryRow}>
+                <TouchableOpacity
+                  style={[styles.summaryCard, styles.summaryCardExplored]}
+                  onPress={() => setActiveSection("explored")}
+                  activeOpacity={0.75}
+                >
+                  <MaterialIcons name="place" size={28} color="#FFD900" />
+                  <Text style={styles.summaryCardCount}>
+                    {places.filter((p) => !isTrip(p) && (!p.status || p.status === "visited")).length}
+                  </Text>
+                  <Text style={styles.summaryCardLabel}>Explored</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.summaryCard, styles.summaryCardToExplore]}
+                  onPress={() => setActiveSection("to-explore")}
+                  activeOpacity={0.75}
+                >
+                  <MaterialIcons name="bookmark" size={28} color="#2563EB" />
+                  <Text style={styles.summaryCardCount}>
+                    {places.filter((p) => p.status === "to-visit").length}
+                  </Text>
+                  <Text style={styles.summaryCardLabel}>To Explore</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={styles.summaryRow}>
+                <TouchableOpacity
+                  style={[styles.summaryCard, styles.summaryCardTracking, { flex: 1 }]}
+                  onPress={() => setActiveSection("live-tracking")}
+                  activeOpacity={0.75}
+                >
+                  <MaterialIcons name="directions-walk" size={28} color="#F97316" />
+                  <Text style={styles.summaryCardCount}>
+                    {places.filter((p) => isTrip(p)).length}
+                  </Text>
+                  <Text style={styles.summaryCardLabel}>Live Tracking</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
 
-          <ScrollView
-            contentContainerStyle={styles.listContent}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-          >
-            {/* ── Visited section ── */}
-            {(() => {
-              const visited = places.filter((p) => !isTrip(p) && (!p.status || p.status === "visited"));
-              const filtered = [...visited]
-                .sort((a, b) => b.visitDate.localeCompare(a.visitDate))
-                .filter((p) =>
-                  listSearch.trim() === "" ||
-                  p.title.toLowerCase().includes(listSearch.toLowerCase())
-                );
-              return (
-                <>
-                  <View style={styles.sectionHeader}>
-                    <View style={styles.placePinDot} />
-                    <Text style={styles.sectionTitle}>Visited</Text>
-                    <Text style={styles.sectionCount}>{visited.length}</Text>
+          {/* ── Explored section ── */}
+          {activeSection === "explored" && (() => {
+            const visited = places
+              .filter((p) => !isTrip(p) && (!p.status || p.status === "visited"))
+              .sort((a, b) => b.visitDate.localeCompare(a.visitDate));
+            return (
+              <ScrollView contentContainerStyle={styles.listContent} showsVerticalScrollIndicator={false}>
+                {visited.length === 0 ? (
+                  <View style={styles.listEmpty}>
+                    <MaterialIcons name="place" size={36} color={AppColors.gray300} />
+                    <Text style={styles.listEmptyTitle}>No places yet</Text>
+                    <Text style={styles.listEmptySubtitle}>Search on the map and mark as Explored</Text>
                   </View>
-                  {visited.length === 0 ? (
-                    <View style={styles.listEmpty}>
-                      <MaterialIcons name="place" size={36} color={AppColors.gray300} />
-                      <Text style={styles.listEmptyTitle}>No places yet</Text>
-                      <Text style={styles.listEmptySubtitle}>Search on the map and mark as Visited</Text>
-                    </View>
-                  ) : filtered.length === 0 ? (
-                    <View style={styles.listEmpty}>
-                      <Text style={styles.listEmptySubtitle}>No visited places match "{listSearch}"</Text>
-                    </View>
-                  ) : filtered.map((place) => (
-                    <View key={place.id} style={styles.placeRow}>
+                ) : visited.map((place) => (
+                  <View key={place.id} style={styles.placeRowWrap}>
+                    <View style={styles.placeRow}>
                       <View style={styles.placePinDot} />
                       <View style={styles.placeInfo}>
                         <Text style={styles.placeTitle} numberOfLines={1}>{place.title}</Text>
                         <Text style={styles.placeDate}>{formatDateDisplay(place.visitDate)}</Text>
                       </View>
                       <TouchableOpacity
-                        style={styles.placeDelete}
+                        style={styles.placeNoteBtn}
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                         activeOpacity={0.7}
-                        onPress={() => {
-                          Alert.alert(
-                            "Remove place?",
-                            `Remove "${place.title}" from your visited list?`,
-                            [
-                              { text: "Cancel", style: "cancel" },
-                              {
-                                text: "Remove",
-                                style: "destructive",
-                                onPress: () => {
-                                  setPlaces((prev) => prev.filter((p) => p.id !== place.id));
-                                  if (webViewRef.current) {
-                                    webViewRef.current.injectJavaScript(`window.removeMarker('${place.id}'); true;`);
-                                  }
-                                  if (token) {
-                                    fetch(`${API_BASE}/delete`, {
-                                      method: "POST",
-                                      headers: { "Content-Type": "application/json", "X-TE-Token": token },
-                                      body: JSON.stringify({ id: place.id }),
-                                    }).catch((err) => console.warn("[travel] delete error:", err));
-                                  }
-                                },
-                              },
-                            ]
-                          );
-                        }}
+                        onPress={() => { setEditingNotesId(place.id); setEditNotesText(place.notes ?? ""); }}
                       >
-                        <MaterialIcons name="delete-outline" size={18} color={AppColors.red500} />
+                        <MaterialIcons name={place.notes ? "notes" : "note-add"} size={17} color={place.notes ? AppColors.textSecondary : AppColors.gray300} />
                       </TouchableOpacity>
-                    </View>
-                  ))}
-                </>
-              );
-            })()}
-
-            {/* ── Want to Visit section ── */}
-            {(() => {
-              const wishlist = places.filter((p) => p.status === "to-visit");
-              const filtered = wishlist.filter((p) =>
-                listSearch.trim() === "" ||
-                p.title.toLowerCase().includes(listSearch.toLowerCase())
-              );
-              return (
-                <>
-                  <View style={[styles.sectionHeader, { marginTop: 20 }]}>
-                    <View style={styles.wishPinDot} />
-                    <Text style={styles.sectionTitle}>Want to Visit</Text>
-                    <Text style={styles.sectionCount}>{wishlist.length}</Text>
-                  </View>
-
-                  {/* Inline add form */}
-                  <View style={styles.wishlistAddRow}>
-                    <TextInput
-                      style={styles.wishlistInput}
-                      placeholder="Add a place or note…"
-                      placeholderTextColor={AppColors.gray400}
-                      value={wishlistText}
-                      onChangeText={setWishlistText}
-                      onSubmitEditing={handleAddWishlistItem}
-                      returnKeyType="done"
-                      autoCorrect={false}
-                    />
-                    <TouchableOpacity
-                      style={[styles.wishlistAddBtn, (!wishlistText.trim() || addingWishlist) && styles.wishlistAddBtnDisabled]}
-                      onPress={handleAddWishlistItem}
-                      disabled={!wishlistText.trim() || addingWishlist}
-                      activeOpacity={0.8}
-                    >
-                      {addingWishlist
-                        ? <ActivityIndicator size="small" color={AppColors.white} />
-                        : <MaterialIcons name="add" size={20} color={AppColors.white} />}
-                    </TouchableOpacity>
-                  </View>
-
-                  {wishlist.length === 0 ? (
-                    <View style={styles.listEmpty}>
-                      <MaterialIcons name="bookmark-border" size={36} color={AppColors.gray300} />
-                      <Text style={styles.listEmptyTitle}>Your wishlist is empty</Text>
-                      <Text style={styles.listEmptySubtitle}>Type above or search on the map</Text>
-                    </View>
-                  ) : filtered.length === 0 ? (
-                    <View style={styles.listEmpty}>
-                      <Text style={styles.listEmptySubtitle}>No wishlist items match "{listSearch}"</Text>
-                    </View>
-                  ) : filtered.map((place) => (
-                    <View key={place.id} style={styles.placeRow}>
-                      <View style={styles.wishPinDot} />
-                      <View style={styles.placeInfo}>
-                        <Text style={styles.placeTitle} numberOfLines={2}>{place.title}</Text>
-                      </View>
                       <TouchableOpacity
                         style={styles.placeDelete}
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -1118,7 +1276,7 @@ export default function TravelScreen() {
                         onPress={() => {
                           Alert.alert(
                             "Remove place?",
-                            `Remove "${place.title}" from your wishlist?`,
+                            `Remove "${place.title}" from your explored list?`,
                             [
                               { text: "Cancel", style: "cancel" },
                               {
@@ -1145,69 +1303,217 @@ export default function TravelScreen() {
                         <MaterialIcons name="delete-outline" size={18} color={AppColors.red500} />
                       </TouchableOpacity>
                     </View>
-                  ))}
-                </>
-              );
-            })()}
-
-            {/* ── Trips section ── */}
-            {(() => {
-              const trips = places.filter((p) => isTrip(p));
-              return (
-                <>
-                  <View style={[styles.sectionHeader, { marginTop: 20 }]}>
-                    <View style={styles.tripPinDot} />
-                    <Text style={styles.sectionTitle}>Trips</Text>
-                    <Text style={styles.sectionCount}>{trips.length}</Text>
+                    {editingNotesId === place.id ? (
+                      <View style={styles.notesEditWrap}>
+                        <TextInput
+                          style={styles.notesEditInput}
+                          value={editNotesText}
+                          onChangeText={setEditNotesText}
+                          placeholder="Add a note about this place…"
+                          placeholderTextColor={AppColors.gray400}
+                          multiline
+                          autoFocus
+                          blurOnSubmit
+                        />
+                        <View style={styles.notesBtnRow}>
+                          <TouchableOpacity style={styles.notesCancelBtn} onPress={() => setEditingNotesId(null)}>
+                            <Text style={styles.notesCancelText}>Cancel</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity style={styles.notesSaveBtn} onPress={() => handleSaveNotes(place, editNotesText)}>
+                            <Text style={styles.notesSaveText}>Save</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    ) : place.notes ? (
+                      <TouchableOpacity
+                        style={styles.notesDisplayRow}
+                        activeOpacity={0.7}
+                        onPress={() => { setEditingNotesId(place.id); setEditNotesText(place.notes ?? ""); }}
+                      >
+                        <Text style={styles.placeNotes}>{place.notes}</Text>
+                      </TouchableOpacity>
+                    ) : null}
                   </View>
-                  {trips.length === 0 ? (
-                    <View style={styles.listEmpty}>
-                      <MaterialIcons name="directions-car" size={36} color={AppColors.gray300} />
-                      <Text style={styles.listEmptyTitle}>No trips yet</Text>
-                      <Text style={styles.listEmptySubtitle}>Tap "Start Trip" on the map to record a route</Text>
-                    </View>
-                  ) : trips.map((trip) => {
-                    let data: { durationMs?: number; distanceKm?: number; waypoints?: TripWaypoint[]; startTime?: number } | null = null;
-                    try { data = JSON.parse(trip.title); } catch {}
-                    const wps = data?.waypoints ?? [];
-                    return (
-                      <TripRowItem
-                        key={trip.id}
-                        trip={trip}
-                        data={data}
-                        wps={wps}
-                        fmtDuration={fmtDuration}
-                        onDelete={() => {
+                ))}
+              </ScrollView>
+            );
+          })()}
+
+          {/* ── To Explore section ── */}
+          {activeSection === "to-explore" && (() => {
+            const wishlist = places.filter((p) => p.status === "to-visit");
+            return (
+              <ScrollView
+                contentContainerStyle={styles.listContent}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+              >
+                {/* Inline add form */}
+                <View style={styles.wishlistAddRow}>
+                  <TextInput
+                    style={styles.wishlistInput}
+                    placeholder="Add a place or note…"
+                    placeholderTextColor={AppColors.gray400}
+                    value={wishlistText}
+                    onChangeText={setWishlistText}
+                    onSubmitEditing={handleAddWishlistItem}
+                    returnKeyType="done"
+                    autoCorrect={false}
+                  />
+                  <TouchableOpacity
+                    style={[styles.wishlistAddBtn, (!wishlistText.trim() || addingWishlist) && styles.wishlistAddBtnDisabled]}
+                    onPress={handleAddWishlistItem}
+                    disabled={!wishlistText.trim() || addingWishlist}
+                    activeOpacity={0.8}
+                  >
+                    {addingWishlist
+                      ? <ActivityIndicator size="small" color={AppColors.white} />
+                      : <MaterialIcons name="add" size={20} color={AppColors.white} />}
+                  </TouchableOpacity>
+                </View>
+                {wishlist.length === 0 ? (
+                  <View style={styles.listEmpty}>
+                    <MaterialIcons name="bookmark-border" size={36} color={AppColors.gray300} />
+                    <Text style={styles.listEmptyTitle}>Your list is empty</Text>
+                    <Text style={styles.listEmptySubtitle}>Type above or search on the map</Text>
+                  </View>
+                ) : wishlist.map((place) => (
+                  <View key={place.id} style={styles.placeRowWrap}>
+                    <View style={styles.placeRow}>
+                      <View style={styles.wishPinDot} />
+                      <View style={styles.placeInfo}>
+                        <Text style={styles.placeTitle} numberOfLines={2}>{place.title}</Text>
+                      </View>
+                      <TouchableOpacity
+                        style={styles.placeNoteBtn}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        activeOpacity={0.7}
+                        onPress={() => { setEditingNotesId(place.id); setEditNotesText(place.notes ?? ""); }}
+                      >
+                        <MaterialIcons name={place.notes ? "notes" : "note-add"} size={17} color={place.notes ? AppColors.textSecondary : AppColors.gray300} />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.placeDelete}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        activeOpacity={0.7}
+                        onPress={() => {
                           Alert.alert(
-                            "Delete trip?",
-                            "This will permanently remove the trip and its route from your map.",
+                            "Remove place?",
+                            `Remove "${place.title}" from your list?`,
                             [
                               { text: "Cancel", style: "cancel" },
                               {
-                                text: "Delete",
+                                text: "Remove",
                                 style: "destructive",
                                 onPress: () => {
-                                  setPlaces((prev) => prev.filter((p) => p.id !== trip.id));
-                                  webViewRef.current?.injectJavaScript(`window.removeSavedTrip('${trip.id}'); true;`);
+                                  setPlaces((prev) => prev.filter((p) => p.id !== place.id));
+                                  if (webViewRef.current) {
+                                    webViewRef.current.injectJavaScript(`window.removeMarker('${place.id}'); true;`);
+                                  }
                                   if (token) {
                                     fetch(`${API_BASE}/delete`, {
                                       method: "POST",
                                       headers: { "Content-Type": "application/json", "X-TE-Token": token },
-                                      body: JSON.stringify({ id: trip.id }),
-                                    }).catch((e) => console.warn("[travel] delete trip error:", e));
+                                      body: JSON.stringify({ id: place.id }),
+                                    }).catch((err) => console.warn("[travel] delete error:", err));
                                   }
                                 },
                               },
                             ]
                           );
                         }}
-                      />
-                    );
-                  })}
-                </>
-              );
-            })()}
-          </ScrollView>
+                      >
+                        <MaterialIcons name="delete-outline" size={18} color={AppColors.red500} />
+                      </TouchableOpacity>
+                    </View>
+                    {editingNotesId === place.id ? (
+                      <View style={styles.notesEditWrap}>
+                        <TextInput
+                          style={styles.notesEditInput}
+                          value={editNotesText}
+                          onChangeText={setEditNotesText}
+                          placeholder="Add a note about this place…"
+                          placeholderTextColor={AppColors.gray400}
+                          multiline
+                          autoFocus
+                          blurOnSubmit
+                        />
+                        <View style={styles.notesBtnRow}>
+                          <TouchableOpacity style={styles.notesCancelBtn} onPress={() => setEditingNotesId(null)}>
+                            <Text style={styles.notesCancelText}>Cancel</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity style={styles.notesSaveBtn} onPress={() => handleSaveNotes(place, editNotesText)}>
+                            <Text style={styles.notesSaveText}>Save</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    ) : place.notes ? (
+                      <TouchableOpacity
+                        style={styles.notesDisplayRow}
+                        activeOpacity={0.7}
+                        onPress={() => { setEditingNotesId(place.id); setEditNotesText(place.notes ?? ""); }}
+                      >
+                        <Text style={styles.placeNotes}>{place.notes}</Text>
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
+                ))}
+              </ScrollView>
+            );
+          })()}
+
+          {/* ── Live Tracking section ── */}
+          {activeSection === "live-tracking" && (() => {
+            const trips = places.filter((p) => isTrip(p));
+            return (
+              <ScrollView contentContainerStyle={styles.listContent} showsVerticalScrollIndicator={false}>
+                {trips.length === 0 ? (
+                  <View style={styles.listEmpty}>
+                    <MaterialIcons name="directions-car" size={36} color={AppColors.gray300} />
+                    <Text style={styles.listEmptyTitle}>No trips yet</Text>
+                    <Text style={styles.listEmptySubtitle}>Tap "Start Trip" on the map to record a route</Text>
+                  </View>
+                ) : trips.map((trip) => {
+                  let data: { durationMs?: number; distanceKm?: number; waypoints?: TripWaypoint[]; startTime?: number } | null = null;
+                  try { data = JSON.parse(trip.title); } catch {}
+                  const wps = data?.waypoints ?? [];
+                  return (
+                    <TripRowItem
+                      key={trip.id}
+                      trip={trip}
+                      data={data}
+                      wps={wps}
+                      fmtDuration={fmtDuration}
+                      onDelete={() => {
+                        Alert.alert(
+                          "Delete trip?",
+                          "This will permanently remove the trip and its route from your map.",
+                          [
+                            { text: "Cancel", style: "cancel" },
+                            {
+                              text: "Delete",
+                              style: "destructive",
+                              onPress: () => {
+                                setPlaces((prev) => prev.filter((p) => p.id !== trip.id));
+                                webViewRef.current?.injectJavaScript(`window.removeSavedTrip('${trip.id}'); true;`);
+                                if (token) {
+                                  fetch(`${API_BASE}/delete`, {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json", "X-TE-Token": token },
+                                    body: JSON.stringify({ id: trip.id }),
+                                  }).catch((e) => console.warn("[travel] delete trip error:", e));
+                                }
+                              },
+                            },
+                          ]
+                        );
+                      }}
+                    />
+                  );
+                })}
+              </ScrollView>
+            );
+          })()}
         </View>
       )}
 
@@ -1269,79 +1575,102 @@ export default function TravelScreen() {
 
       {/* Confirmation card */}
       {!showList && pendingPlace && (
-        <View style={[styles.confirmCard, { paddingBottom: insets.bottom + 16 }]}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "position" : "padding"}
+          keyboardVerticalOffset={insets.bottom}
+          style={[styles.confirmCard, { paddingBottom: insets.bottom + 16 }]}
+        >
           {/* Drag handle */}
           <View style={styles.handle} />
 
-          <Text style={styles.confirmTitle}>{shortTitle}</Text>
-          {shortAddress ? (
-            <Text style={styles.confirmAddress} numberOfLines={2}>
-              {shortAddress}
-            </Text>
-          ) : null}
-
-          {/* Date picker row */}
-          <View style={styles.datePicker}>
-            <TouchableOpacity
-              style={styles.dateArrow}
-              onPress={() => setConfirmDate((d) => shiftDate(d, -1))}
-              activeOpacity={0.7}
-            >
-              <MaterialIcons name="chevron-left" size={24} color={AppColors.textPrimary} />
-            </TouchableOpacity>
-            <View style={styles.dateDisplay}>
-              <MaterialIcons name="calendar-today" size={14} color={AppColors.textSecondary} />
-              <Text style={styles.dateText}>{formatDateDisplay(confirmDate)}</Text>
-            </View>
-            <TouchableOpacity
-              style={styles.dateArrow}
-              onPress={() => {
-                const next = shiftDate(confirmDate, 1);
-                if (next <= todayStr()) setConfirmDate(next);
-              }}
-              activeOpacity={0.7}
-            >
-              <MaterialIcons
-                name="chevron-right"
-                size={24}
-                color={confirmDate >= todayStr() ? AppColors.gray300 : AppColors.textPrimary}
-              />
-            </TouchableOpacity>
-          </View>
-
-          {/* Action buttons */}
-          <View style={styles.confirmBtnRow}>
-            <TouchableOpacity
-              style={[styles.addBtn, styles.addBtnVisited, adding && styles.addBtnDisabled]}
-              onPress={() => handleConfirmAdd("visited")}
-              activeOpacity={0.85}
-              disabled={adding}
-            >
-              {adding ? (
-                <ActivityIndicator size="small" color={AppColors.textPrimary} />
-              ) : (
-                <Text style={styles.addBtnText}>✓ Visited</Text>
-              )}
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.addBtn, styles.addBtnWishlist, adding && styles.addBtnDisabled]}
-              onPress={() => handleConfirmAdd("to-visit")}
-              activeOpacity={0.85}
-              disabled={adding}
-            >
-              <Text style={styles.addBtnTextWishlist}>★ Want to Visit</Text>
-            </TouchableOpacity>
-          </View>
-
-          <TouchableOpacity
-            style={styles.cancelBtn}
-            onPress={handleCancelAdd}
-            activeOpacity={0.7}
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            bounces={false}
           >
-            <Text style={styles.cancelText}>Cancel</Text>
-          </TouchableOpacity>
-        </View>
+            <Text style={styles.confirmTitle}>{shortTitle}</Text>
+            {shortAddress ? (
+              <Text style={styles.confirmAddress} numberOfLines={2}>
+                {shortAddress}
+              </Text>
+            ) : null}
+
+            {/* Date picker row */}
+            <View style={styles.datePicker}>
+              <TouchableOpacity
+                style={styles.dateArrow}
+                onPress={() => setConfirmDate((d) => shiftDate(d, -1))}
+                activeOpacity={0.7}
+              >
+                <MaterialIcons name="chevron-left" size={24} color={AppColors.textPrimary} />
+              </TouchableOpacity>
+              <View style={styles.dateDisplay}>
+                <MaterialIcons name="calendar-today" size={14} color={AppColors.textSecondary} />
+                <Text style={styles.dateText}>{formatDateDisplay(confirmDate)}</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.dateArrow}
+                onPress={() => {
+                  const next = shiftDate(confirmDate, 1);
+                  if (next <= todayStr()) setConfirmDate(next);
+                }}
+                activeOpacity={0.7}
+              >
+                <MaterialIcons
+                  name="chevron-right"
+                  size={24}
+                  color={confirmDate >= todayStr() ? AppColors.gray300 : AppColors.textPrimary}
+                />
+              </TouchableOpacity>
+            </View>
+
+            {/* Notes */}
+            <Text style={styles.notesLabel}>Notes (optional)</Text>
+            <TextInput
+              style={styles.notesInput}
+              placeholder="Anything to remember about this place…"
+              placeholderTextColor={AppColors.gray400}
+              value={confirmNotes}
+              onChangeText={setConfirmNotes}
+              multiline
+              blurOnSubmit
+              autoCorrect={false}
+            />
+
+            {/* Action buttons */}
+            <View style={styles.confirmBtnRow}>
+              <TouchableOpacity
+                style={[styles.addBtn, styles.addBtnVisited, adding && styles.addBtnDisabled]}
+                onPress={() => handleConfirmAdd("visited")}
+                activeOpacity={0.85}
+                disabled={adding}
+              >
+                {adding ? (
+                  <ActivityIndicator size="small" color={AppColors.textPrimary} />
+                ) : (
+                  <Text style={styles.addBtnText}>✓ Visited</Text>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.addBtn, styles.addBtnWishlist, adding && styles.addBtnDisabled]}
+                onPress={() => handleConfirmAdd("to-visit")}
+                activeOpacity={0.85}
+                disabled={adding}
+              >
+                <Text style={styles.addBtnTextWishlist}>★ Want to Visit</Text>
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              style={styles.cancelBtn}
+              onPress={handleCancelAdd}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </KeyboardAvoidingView>
       )}
     </View>
   );
@@ -1616,13 +1945,84 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: AppColors.gray400,
   },
+  placeRowWrap: {
+    borderBottomWidth: 1,
+    borderBottomColor: AppColors.gray100,
+  },
   placeRow: {
     flexDirection: "row",
     alignItems: "center",
     paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: AppColors.gray100,
     gap: 12,
+  },
+  placeNoteBtn: {
+    padding: 4,
+  },
+  notesLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: AppColors.textSecondary,
+    marginBottom: 6,
+  },
+  notesInput: {
+    backgroundColor: AppColors.gray100,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: AppColors.textPrimary,
+    marginBottom: 16,
+    minHeight: 70,
+    textAlignVertical: "top",
+  },
+  notesEditWrap: {
+    paddingBottom: 12,
+  },
+  notesEditInput: {
+    backgroundColor: AppColors.gray100,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 13,
+    color: AppColors.textPrimary,
+    marginBottom: 8,
+    minHeight: 60,
+    textAlignVertical: "top",
+  },
+  notesBtnRow: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 8,
+  },
+  notesCancelBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+  },
+  notesCancelText: {
+    fontSize: 13,
+    color: AppColors.textSecondary,
+    fontWeight: "500",
+  },
+  notesSaveBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    backgroundColor: AppColors.primarySolid,
+    borderRadius: 8,
+  },
+  notesSaveText: {
+    fontSize: 13,
+    color: AppColors.textPrimary,
+    fontWeight: "700",
+  },
+  notesDisplayRow: {
+    paddingBottom: 10,
+    paddingLeft: 22,
+  },
+  placeNotes: {
+    fontSize: 12,
+    color: AppColors.textSecondary,
+    lineHeight: 17,
+    fontStyle: "italic",
   },
   placePinDot: {
     width: 10,
@@ -1877,5 +2277,56 @@ const styles = StyleSheet.create({
   discardTripBtnText: {
     fontSize: 14,
     color: AppColors.textSecondary,
+  },
+
+  // ── Summary cards ──
+  summaryCardsWrap: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 8,
+    backgroundColor: AppColors.white,
+  },
+  summaryRow: {
+    flexDirection: "row",
+    gap: 12,
+    marginBottom: 12,
+  },
+  summaryCard: {
+    flex: 1,
+    backgroundColor: AppColors.gray100,
+    borderRadius: 16,
+    padding: 16,
+    alignItems: "center",
+    gap: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  summaryCardExplored: {
+    borderTopWidth: 3,
+    borderTopColor: AppColors.primarySolid,
+  },
+  summaryCardToExplore: {
+    borderTopWidth: 3,
+    borderTopColor: "#2563EB",
+  },
+  summaryCardTracking: {
+    borderTopWidth: 3,
+    borderTopColor: "#F97316",
+  },
+  summaryCardCount: {
+    fontSize: 26,
+    fontWeight: "700",
+    color: AppColors.textPrimary,
+    marginTop: 4,
+  },
+  summaryCardLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: AppColors.textSecondary,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
   },
 });

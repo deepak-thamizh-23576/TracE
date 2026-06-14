@@ -9,6 +9,7 @@ import {
   Image,
   Keyboard,
   Modal,
+  Platform,
   StyleSheet,
   Text,
   TextInput,
@@ -56,6 +57,7 @@ export default function ExpandedGoalCard({
   const [uploadedUrl, setUploadedUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
 
+
   // Delay history editing state
   const [editingDelayId, setEditingDelayId] = useState<string | null>(null);
   const [editingDelayText, setEditingDelayText] = useState("");
@@ -98,19 +100,60 @@ export default function ExpandedGoalCard({
   // ── Delete goal handler ──
 
   const handleDeleteGoal = () => {
-    Alert.alert(
-      "Delete Goal",
-      `Are you sure you want to delete "${goal.title}"?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        { text: "Delete", style: "destructive", onPress: () => onDelete?.() },
-      ]
-    );
+    if (Platform.OS === "web") {
+      if (window.confirm(`Are you sure you want to delete "${goal.title}"?`)) {
+        onDelete?.();
+      }
+    } else {
+      Alert.alert(
+        "Delete Goal",
+        `Are you sure you want to delete "${goal.title}"?`,
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Delete", style: "destructive", onPress: () => onDelete?.() },
+        ]
+      );
+    }
   };
 
   // ── Delay handlers ──
 
   const handlePickAttachment = async () => {
+    if (Platform.OS === "web") {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = "image/*";
+      input.onchange = async (e: any) => {
+        const file: File = e.target.files?.[0];
+        if (!file) return;
+        const objectUrl = URL.createObjectURL(file);
+        setAttachmentUri(objectUrl);
+        setUploadedUrl(null);
+        setUploading(true);
+        try {
+          const formData = new FormData();
+          formData.append("file", file, file.name);
+          const res = await fetch(`${API_BASE}/uploadAttachment`, {
+            method: "POST",
+            headers: { "X-TE-Token": authToken ?? "" },
+            body: formData,
+          });
+          const json = await res.json();
+          if (json.url) {
+            setUploadedUrl(json.url);
+          } else {
+            throw new Error(json.error ?? "Upload failed");
+          }
+        } catch (err: any) {
+          Alert.alert("Upload failed", err.message ?? "Could not upload image.");
+          setAttachmentUri(null);
+        } finally {
+          setUploading(false);
+        }
+      };
+      input.click();
+      return;
+    }
     try {
       const ImagePicker = require("expo-image-picker");
 
@@ -195,18 +238,24 @@ export default function ExpandedGoalCard({
   };
 
   const handleDeleteDelay = (delayId: string) => {
-    Alert.alert(
-      "Delete Delay",
-      "Are you sure you want to permanently delete this delay entry?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => onDeleteDelay?.(delayId),
-        },
-      ]
-    );
+    if (Platform.OS === "web") {
+      if (window.confirm("Are you sure you want to permanently delete this delay entry?")) {
+        onDeleteDelay?.(delayId);
+      }
+    } else {
+      Alert.alert(
+        "Delete Delay",
+        "Are you sure you want to permanently delete this delay entry?",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Delete",
+            style: "destructive",
+            onPress: () => onDeleteDelay?.(delayId),
+          },
+        ]
+      );
+    }
   };
 
   return (

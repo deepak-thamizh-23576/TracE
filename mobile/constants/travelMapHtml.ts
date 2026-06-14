@@ -79,6 +79,27 @@ export const TRAVEL_MAP_HTML = `<!DOCTYPE html>
       background: #fff;
     }
 
+    /* ── Preview (search result) pin ── */
+    .te-pin-preview {
+      background: #6B7280;
+      border-color: #374151;
+    }
+    .te-pin-dot-preview {
+      background: #fff;
+    }
+    .te-preview-pulse {
+      position: absolute;
+      top: -6px; left: -6px;
+      width: 34px; height: 34px;
+      border-radius: 50%;
+      background: rgba(107,114,128,0.25);
+      animation: preview-pulse 1.4s ease-out infinite;
+    }
+    @keyframes preview-pulse {
+      0%   { transform: scale(0.8); opacity: 1; }
+      100% { transform: scale(2);   opacity: 0; }
+    }
+
     /* ── Live location dot ── */
     .me-wrap { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; }
     .me-ring {
@@ -189,6 +210,22 @@ export const TRAVEL_MAP_HTML = `<!DOCTYPE html>
     window.clearMarkers = function() {
       Object.keys(markers).forEach(function(id){ map.removeLayer(markers[id]); });
       markers = {};
+    };
+
+    // ── Preview pin (shown while confirmation card is open) ──
+    var previewMarker = null;
+    function previewIcon() {
+      return L.divIcon({
+        html: '<div class="te-pin-wrap" style="position:relative"><div class="te-preview-pulse"></div><div class="te-pin te-pin-preview"><div class="te-pin-dot te-pin-dot-preview"></div></div></div>',
+        className: '', iconSize: [32,32], iconAnchor: [16,32], popupAnchor: [0,-34],
+      });
+    }
+    window.showPreviewPin = function(lat, lng) {
+      if (previewMarker) { map.removeLayer(previewMarker); }
+      previewMarker = L.marker([lat, lng], { icon: previewIcon(), zIndexOffset: 9500 }).addTo(map);
+    };
+    window.removePreviewPin = function() {
+      if (previewMarker) { map.removeLayer(previewMarker); previewMarker = null; }
     };
 
     // ── Live location ──

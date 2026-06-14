@@ -79,6 +79,7 @@ export interface TravelPlace {
   longitude: number;
   visitDate: string;   // YYYY-MM-DD
   status: "visited" | "to-visit" | "trip";
+  notes?: string;      // Optional personal note about the place
 }
 
 export interface TripWaypoint {

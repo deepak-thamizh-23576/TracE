@@ -341,6 +341,8 @@ export default function LoginScreen() {
             </Text>
           </TouchableOpacity>
         )}
+
+        <Text style={styles.builtOnText}>Built on Catalyst by Zoho</Text>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -456,6 +458,14 @@ const styles = StyleSheet.create({
   toggleLink: {
     fontWeight: "700",
     color: AppColors.textPrimary,
+  },
+  builtOnText: {
+    textAlign: "center",
+    fontSize: 11,
+    color: AppColors.gray400,
+    marginTop: 28,
+    marginBottom: 8,
+    letterSpacing: 0.3,
   },
   forgotContainer: {
     alignSelf: "flex-end",

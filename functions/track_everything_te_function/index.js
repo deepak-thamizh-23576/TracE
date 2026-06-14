@@ -654,7 +654,6 @@ app.get("/proxyAttachment", authMiddleware, async (req, res) => {
 
     res.setHeader("Content-Type", contentType);
     res.setHeader("Cache-Control", "private, max-age=3600");
-    res.setHeader("Access-Control-Allow-Origin", "*");
 
     if (typeof stream.pipe === "function") {
       stream.pipe(res);
@@ -911,14 +910,17 @@ app.get("/travel/list", authMiddleware, async (req, res) => {
 
     const places = allItems.map(row => {
       const [lat, lng] = (row.itemTypeLevel || "0,0").split(",").map(Number);
+      const [rawTitle, ...notesParts] = (row.itemContent || "").split("|||");
+      const notes = notesParts.join("|||").trim();
       return {
         id: String(row.ROWID),
-        title: row.itemContent || "",
-        address: row.itemContent || "",
+        title: rawTitle.trim() || "",
+        address: rawTitle.trim() || "",
         latitude: lat || 0,
         longitude: lng || 0,
         visitDate: (row.taskDate || "").substring(0, 10),
         status: row.status || "visited",
+        notes: notes || undefined,
       };
     });
 

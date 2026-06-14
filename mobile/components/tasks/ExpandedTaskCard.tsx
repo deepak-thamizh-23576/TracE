@@ -88,6 +88,7 @@ export default function ExpandedTaskCard({
   // blob URLs for web — keyed by stratus key to avoid re-fetching
   const [blobCache, setBlobCache] = useState<Record<string, string>>({});
 
+
   const API_BASE = __DEV__
     ? (typeof window !== "undefined" && typeof document !== "undefined"
         ? "http://localhost:3004/server/track_everything_te_function"
@@ -136,6 +137,44 @@ export default function ExpandedTaskCard({
 
 
   const handlePickAttachment = async () => {
+    if (Platform.OS === "web") {
+      // Create and click a temporary file input synchronously — must be
+      // in the same call stack as the user gesture or browsers will block it.
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = "image/*";
+      input.onchange = async (e: any) => {
+        const file: File = e.target.files?.[0];
+        if (!file) return;
+        const objectUrl = URL.createObjectURL(file);
+        setAttachmentUri(objectUrl);
+        setUploadedUrl(null);
+        setUploading(true);
+        try {
+          const formData = new FormData();
+          formData.append("file", file, file.name);
+          const res = await fetch(`${API_BASE}/uploadAttachment`, {
+            method: "POST",
+            headers: { "X-TE-Token": authToken ?? "" },
+            body: formData,
+          });
+          const json = await res.json();
+          if (json.url) {
+            setUploadedUrl(json.url);
+            if (json.key) setUploadedKey(json.key);
+          } else {
+            throw new Error(json.error ?? "Upload failed");
+          }
+        } catch (err: any) {
+          Alert.alert("Upload failed", err.message ?? "Could not upload image.");
+          setAttachmentUri(null);
+        } finally {
+          setUploading(false);
+        }
+      };
+      input.click();
+      return;
+    }
     try {
       const ImagePicker = require("expo-image-picker");
 
@@ -262,25 +301,37 @@ export default function ExpandedTaskCard({
 
   // ── Drop handler ──
   const handleDropTask = () => {
-    Alert.alert(
-      "Drop Task",
-      `Drop "${task.title}"? It will be moved to the Dropped section.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        { text: "Drop", style: "destructive", onPress: () => onDrop?.() },
-      ]
-    );
+    if (Platform.OS === "web") {
+      if (window.confirm(`Drop "${task.title}"? It will be moved to the Dropped section.`)) {
+        onDrop?.();
+      }
+    } else {
+      Alert.alert(
+        "Drop Task",
+        `Drop "${task.title}"? It will be moved to the Dropped section.`,
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Drop", style: "destructive", onPress: () => onDrop?.() },
+        ]
+      );
+    }
   };
 
   const handleDeleteTask = () => {
-    Alert.alert(
-      "Delete Task",
-      `Are you sure you want to delete "${task.title}"?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        { text: "Delete", style: "destructive", onPress: () => onDelete?.() },
-      ]
-    );
+    if (Platform.OS === "web") {
+      if (window.confirm(`Are you sure you want to delete "${task.title}"?`)) {
+        onDelete?.();
+      }
+    } else {
+      Alert.alert(
+        "Delete Task",
+        `Are you sure you want to delete "${task.title}"?`,
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Delete", style: "destructive", onPress: () => onDelete?.() },
+        ]
+      );
+    }
   };
 
   const handleSave = () => {
